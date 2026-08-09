@@ -815,12 +815,29 @@ public class MainActivity extends Activity {
         if (importing || preparingZip || awaitingNtfy) {
             return;
         }
-        for (QueuedFile file : new ArrayList<>(queue)) {
-            deleteRecursively(localFile(file).getParentFile());
-        }
+
+        // Clear the durable state before leaving the Activity. Using commit() here is deliberate:
+        // this action immediately finishes when the queue becomes empty, so a deferred apply()
+        // must not be the only record that the user explicitly cleared the queue.
         queue.clear();
-        saveQueue();
-        setStatus("Queue cleared.");
+        boolean stateCleared = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .remove(PREFS_QUEUE)
+                .remove(PREFS_ACTIVE_FILES)
+                .remove(PREFS_ACTIVE_ZIP)
+                .remove(PREFS_ACTIVE_AWAITING_NTFY)
+                .remove(PREFS_LEGACY_ACTIVE_AWAITING_CONFIRMATION)
+                .commit();
+
+        // Delete the complete directory rather than only the files represented by the current
+        // in-memory queue. This also removes abandoned imports and prepared ZIP bundles.
+        boolean filesCleared = deleteRecursively(new File(getFilesDir(), QUEUE_DIRECTORY));
+        if (stateCleared && filesCleared) {
+            setStatus("Queue cleared.");
+        } else {
+            setStatus("Queue cleared, but some temporary data could not be removed.");
+            Toast.makeText(this, "Some temporary queue data could not be removed.",
+                    Toast.LENGTH_LONG).show();
+        }
         renderQueue();
         finishIfQueueEmpty();
     }
@@ -1112,21 +1129,23 @@ public class MainActivity extends Activity {
         return clean.length() > 180 ? clean.substring(0, 180) : clean;
     }
 
-    private void deleteRecursively(File file) {
+    private boolean deleteRecursively(File file) {
         if (file == null || !file.exists()) {
-            return;
+            return true;
         }
+        boolean childrenDeleted = true;
         if (file.isDirectory()) {
             File[] children = file.listFiles();
             if (children != null) {
                 for (File child : children) {
-                    deleteRecursively(child);
+                    childrenDeleted &= deleteRecursively(child);
                 }
+            } else {
+                childrenDeleted = false;
             }
         }
         // Queue files are private temporary copies created by this app.
-        //noinspection ResultOfMethodCallIgnored
-        file.delete();
+        return childrenDeleted && (file.delete() || !file.exists());
     }
 
     private void setStatus(String message) {
