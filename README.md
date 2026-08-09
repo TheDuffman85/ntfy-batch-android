@@ -27,15 +27,26 @@ result, so the relay cannot distinguish a successful send from pressing Back.
 ## Build
 
 Open the directory in Android Studio and let it install the Android SDK and Gradle components, or
-run this from a machine with Android SDK platform 35 installed:
+run the included build script from the project directory on a machine with Android SDK platform 35
+installed:
 
-```text
+```sh
+./build.sh
+```
+
+The script prefers `JAVA_HOME`, then a JDK on `PATH`, and finally a compatible JDK already cached by
+Gradle, so a system JDK installation is not required when Gradle has already downloaded one. It
+also detects Android SDK platform 35 in `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and common SDK
+locations, including temporary SDK directories under `/tmp`. It produces
+`app/build/outputs/apk/debug/app-debug.apk`. You can also run the Gradle task directly:
+
+```sh
 ./gradlew :app:assembleDebug
 ```
 
-The APK will be at `app/build/outputs/apk/debug/app-debug.apk`. Install it with Android Studio or:
+Install the APK with Android Studio or:
 
-```text
+```sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
