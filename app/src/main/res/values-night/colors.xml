@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ntfy_primary">#2F7D6C</color>
+    <color name="ntfy_primary_dark">#286D60</color>
+    <color name="ntfy_primary_container">#1C4037</color>
+    <color name="relay_background">#0F1513</color>
+    <color name="relay_surface">#18211F</color>
+    <color name="relay_text">#E4EFEB</color>
+    <color name="relay_muted">#A1B3AE</color>
+    <color name="relay_outline">#354540</color>
+    <color name="relay_disabled">#53635F</color>
+    <color name="relay_accent">#9BE2CF</color>
+    <color name="relay_on_primary">#FFFFFF</color>
+    <color name="relay_neutral_container">#26332F</color>
+</resources>

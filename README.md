@@ -31,6 +31,8 @@ before tapping Send. The relay creates a ZIP with stored (not deflated) entries,
 queued files while ntfy is open, then removes the whole bundle when ntfy returns. The switch is
 remembered for the next share; it is off by default.
 
+The app follows Android's system light or dark appearance, including the system bars.
+
 The queue is fire-and-forget: ntfy's current share activity does not return a success result, so the
 relay treats returning from ntfy—whether after sending or backing out—as complete and advances.
 
@@ -48,7 +50,7 @@ The script prefers `JAVA_HOME`, then a JDK on `PATH`, and finally a compatible J
 Gradle, so a system JDK installation is not required when Gradle has already downloaded one. It
 also detects Android SDK platform 35 in `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and common SDK
 locations, including temporary SDK directories under `/tmp`. It produces a versioned APK such as
-`app/build/outputs/apk/debug/ntfy-batch-v0.1.0-debug.apk`. You can also run the Gradle task directly:
+`app/build/outputs/apk/debug/ntfy-batch-v0.2.0-debug.apk`. You can also run the Gradle task directly:
 
 ```sh
 ./gradlew :app:assembleDebug
@@ -57,7 +59,7 @@ locations, including temporary SDK directories under `/tmp`. It produces a versi
 Install the APK with Android Studio or:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/ntfy-batch-v0.1.0-debug.apk
+adb install -r app/build/outputs/apk/debug/ntfy-batch-v0.2.0-debug.apk
 ```
 
 ## Versioning
@@ -65,8 +67,8 @@ adb install -r app/build/outputs/apk/debug/ntfy-batch-v0.1.0-debug.apk
 The release version is defined once in `gradle.properties`:
 
 ```properties
-VERSION_CODE=1
-VERSION_NAME=0.1.0
+VERSION_CODE=2
+VERSION_NAME=0.2.0
 ```
 
 `VERSION_NAME` follows semantic versioning (`major.minor.patch`) and is shown in the app and APK

@@ -7,7 +7,6 @@ import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.database.Cursor;
@@ -67,13 +66,6 @@ import java.util.zip.ZipOutputStream;
  */
 public class MainActivity extends Activity {
     private static final int REQUEST_NTFY_SHARE = 1001;
-    private static final int COLOR_PRIMARY = 0xFF338574;
-    private static final int COLOR_PRIMARY_DARK = 0xFF286D60;
-    private static final int COLOR_BACKGROUND = 0xFFF5F8F7;
-    private static final int COLOR_SURFACE = 0xFFFFFFFF;
-    private static final int COLOR_TEXT = 0xFF1D2B28;
-    private static final int COLOR_MUTED = 0xFF65736F;
-    private static final int COLOR_OUTLINE = 0xFFD7E1DE;
     private static final String NTFY_RELEASE_PACKAGE = "io.heckel.ntfy";
     private static final String NTFY_DEBUG_PACKAGE = "io.heckel.ntfy.debug";
     private static final String NTFY_SHARE_ACTIVITY = "io.heckel.ntfy.ui.ShareActivity";
@@ -92,6 +84,15 @@ public class MainActivity extends Activity {
     private final List<QueuedFile> queue = new ArrayList<>();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private int colorPrimary;
+    private int colorBackground;
+    private int colorSurface;
+    private int colorText;
+    private int colorMuted;
+    private int colorOutline;
+    private int colorAccent;
+    private int colorOnPrimary;
 
     private LinearLayout queueContainer;
     private TextView statusText;
@@ -114,6 +115,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        resolveColors();
         loadQueue();
         buildUi();
         restoreActiveTransfer();
@@ -162,22 +164,35 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    private void resolveColors() {
+        colorPrimary = androidx.core.content.ContextCompat.getColor(this, R.color.ntfy_primary);
+        colorBackground = androidx.core.content.ContextCompat.getColor(
+                this, R.color.relay_background);
+        colorSurface = androidx.core.content.ContextCompat.getColor(this, R.color.relay_surface);
+        colorText = androidx.core.content.ContextCompat.getColor(this, R.color.relay_text);
+        colorMuted = androidx.core.content.ContextCompat.getColor(this, R.color.relay_muted);
+        colorOutline = androidx.core.content.ContextCompat.getColor(this, R.color.relay_outline);
+        colorAccent = androidx.core.content.ContextCompat.getColor(this, R.color.relay_accent);
+        colorOnPrimary = androidx.core.content.ContextCompat.getColor(
+                this, R.color.relay_on_primary);
+    }
+
     private void buildUi() {
         final LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(COLOR_BACKGROUND);
+        root.setBackgroundColor(colorBackground);
         root.setClipToPadding(false);
 
         LinearLayout appBar = new LinearLayout(this);
         appBar.setGravity(Gravity.CENTER_VERTICAL);
         appBar.setPadding(dp(20), 0, dp(20), 0);
-        appBar.setBackgroundColor(COLOR_PRIMARY);
+        appBar.setBackgroundColor(colorPrimary);
         appBar.setElevation(dp(3));
 
         TextView title = new TextView(this);
         title.setText(R.string.app_name);
         title.setTextSize(20);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(colorOnPrimary);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setGravity(Gravity.CENTER_VERTICAL);
         appBar.addView(title, new LinearLayout.LayoutParams(
@@ -204,12 +219,12 @@ public class MainActivity extends Activity {
 
         LinearLayout introCopy = new LinearLayout(this);
         introCopy.setOrientation(LinearLayout.VERTICAL);
-        TextView introTitle = makeText("Send files through ntfy", 18, COLOR_TEXT);
+        TextView introTitle = makeText("Send files through ntfy", 18, colorText);
         introTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         introCopy.addView(introTitle, wrapParams());
         TextView introSubtitle = makeText(
                 "Queue several files here, then send them individually or as one ZIP. The queue advances automatically.",
-                14, COLOR_MUTED);
+                14, colorMuted);
         introSubtitle.setPadding(0, dp(4), 0, 0);
         introCopy.addView(introSubtitle, wrapParams());
         introCard.addView(introCopy, new LinearLayout.LayoutParams(
@@ -218,7 +233,7 @@ public class MainActivity extends Activity {
 
         statusText = new TextView(this);
         statusText.setTextSize(14);
-        statusText.setTextColor(COLOR_PRIMARY_DARK);
+        statusText.setTextColor(colorAccent);
         statusText.setGravity(Gravity.CENTER_VERTICAL);
         statusText.setPadding(dp(14), dp(12), dp(14), dp(12));
         statusText.setBackgroundResource(R.drawable.bg_status);
@@ -234,11 +249,11 @@ public class MainActivity extends Activity {
 
         LinearLayout modeCopy = new LinearLayout(this);
         modeCopy.setOrientation(LinearLayout.VERTICAL);
-        TextView modeTitle = makeText("Send all files as one uncompressed ZIP", 15, COLOR_TEXT);
+        TextView modeTitle = makeText("Send all files as one uncompressed ZIP", 15, colorText);
         modeTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         modeCopy.addView(modeTitle, wrapParams());
         TextView modeSubtitle = makeText(
-                "One ntfy message containing every queued file.", 13, COLOR_MUTED);
+                "One ntfy message containing every queued file.", 13, colorMuted);
         modeSubtitle.setPadding(0, dp(3), 0, 0);
         modeCopy.addView(modeSubtitle, wrapParams());
         modeCard.addView(modeCopy, new LinearLayout.LayoutParams(
@@ -278,13 +293,13 @@ public class MainActivity extends Activity {
         queueHeadingParams.bottomMargin = dp(8);
         content.addView(queueHeading, queueHeadingParams);
 
-        TextView queueTitle = makeText("QUEUE", 12, COLOR_MUTED);
+        TextView queueTitle = makeText("QUEUE", 12, colorMuted);
         queueTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         queueTitle.setLetterSpacing(0.12f);
         queueHeading.addView(queueTitle, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        queueCountText = makeText("EMPTY", 12, COLOR_MUTED);
+        queueCountText = makeText("EMPTY", 12, colorMuted);
         queueCountText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         queueCountText.setGravity(Gravity.END);
         queueHeading.addView(queueCountText, wrapParams());
@@ -309,7 +324,7 @@ public class MainActivity extends Activity {
         emptyState.addView(emptyIcon, new LinearLayout.LayoutParams(dp(42), dp(42)));
         emptyText = new TextView(this);
         emptyText.setTextSize(15);
-        emptyText.setTextColor(COLOR_MUTED);
+        emptyText.setTextColor(colorMuted);
         emptyText.setGravity(Gravity.CENTER);
         emptyText.setPadding(0, dp(12), 0, 0);
         emptyState.addView(emptyText, new LinearLayout.LayoutParams(
@@ -330,19 +345,19 @@ public class MainActivity extends Activity {
         LinearLayout actionPanel = new LinearLayout(this);
         actionPanel.setOrientation(LinearLayout.VERTICAL);
         actionPanel.setPadding(dp(16), dp(8), dp(16), dp(4));
-        actionPanel.setBackgroundColor(COLOR_SURFACE);
+        actionPanel.setBackgroundColor(colorSurface);
         actionPanel.setElevation(dp(4));
 
         sendButton = makeButton("Send current file to ntfy", R.drawable.btn_primary,
-                Color.WHITE, v -> sendCurrentFile());
+                colorOnPrimary, v -> sendCurrentFile());
         actionPanel.addView(sendButton, fullWidthButtonParams());
 
         clearButton = makeButton("Clear queued files", R.drawable.btn_text,
-                COLOR_MUTED, v -> clearQueue());
+                colorMuted, v -> clearQueue());
         actionPanel.addView(clearButton, fullWidthButtonParams());
 
         TextView versionText = makeText(
-                getString(R.string.version_label, BuildConfig.VERSION_NAME), 12, COLOR_MUTED);
+                getString(R.string.version_label, BuildConfig.VERSION_NAME), 12, colorMuted);
         versionText.setGravity(Gravity.CENTER);
         versionText.setPadding(0, dp(2), 0, dp(2));
         actionPanel.addView(versionText, fullWidthParams());
@@ -413,9 +428,9 @@ public class MainActivity extends Activity {
 
     private GradientDrawable cardBackground() {
         GradientDrawable background = new GradientDrawable();
-        background.setColor(COLOR_SURFACE);
+        background.setColor(colorSurface);
         background.setCornerRadius(dp(18));
-        background.setStroke(dp(1), COLOR_OUTLINE);
+        background.setStroke(dp(1), colorOutline);
         return background;
     }
 
@@ -960,7 +975,7 @@ public class MainActivity extends Activity {
                 LinearLayout labelRow = new LinearLayout(this);
                 labelRow.setGravity(Gravity.CENTER_VERTICAL);
                 TextView badge = makeText(index == 0 ? "NEXT" : "" + (index + 1), 11,
-                        index == 0 ? COLOR_PRIMARY_DARK : COLOR_MUTED);
+                        index == 0 ? colorAccent : colorMuted);
                 badge.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
                 badge.setGravity(Gravity.CENTER);
                 badge.setIncludeFontPadding(false);
@@ -970,7 +985,7 @@ public class MainActivity extends Activity {
                 labelRow.addView(badge, wrapParams());
                 details.addView(labelRow, wrapParams());
 
-                TextView name = makeText(file.displayName, 16, COLOR_TEXT);
+                TextView name = makeText(file.displayName, 16, colorText);
                 name.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
                 name.setSingleLine(true);
                 name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
@@ -979,7 +994,7 @@ public class MainActivity extends Activity {
                 details.addView(name, nameParams);
 
                 TextView metadata = makeText(formatBytes(file.size) + "  •  " + file.mimeType,
-                        13, COLOR_MUTED);
+                        13, colorMuted);
                 metadata.setSingleLine(true);
                 metadata.setEllipsize(TextUtils.TruncateAt.END);
                 LinearLayout.LayoutParams metadataParams = fullWidthParams();
@@ -1016,9 +1031,9 @@ public class MainActivity extends Activity {
 
     private GradientDrawable queueCardBackground(boolean next) {
         GradientDrawable background = new GradientDrawable();
-        background.setColor(COLOR_SURFACE);
+        background.setColor(colorSurface);
         background.setCornerRadius(dp(18));
-        background.setStroke(dp(next ? 2 : 1), next ? COLOR_PRIMARY : COLOR_OUTLINE);
+        background.setStroke(dp(next ? 2 : 1), next ? colorPrimary : colorOutline);
         return background;
     }
 

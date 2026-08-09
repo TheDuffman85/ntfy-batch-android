@@ -9,4 +9,7 @@
     <color name="relay_muted">#65736F</color>
     <color name="relay_outline">#D7E1DE</color>
     <color name="relay_disabled">#B7C9C5</color>
+    <color name="relay_accent">#286D60</color>
+    <color name="relay_on_primary">#FFFFFF</color>
+    <color name="relay_neutral_container">#EEF2F1</color>
 </resources>
