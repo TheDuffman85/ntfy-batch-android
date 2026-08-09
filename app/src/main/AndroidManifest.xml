@@ -19,14 +19,8 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop">
+            <!-- Only advertise the app for shares containing multiple files. -->
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-            <!-- Receive both one-file and multi-file shares. -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />

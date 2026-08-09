@@ -59,8 +59,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
- * Receives ACTION_SEND_MULTIPLE and hands files to ntfy's existing share activity one at a time,
- * or as one uncompressed ZIP when that mode is selected.
+ * Receives ACTION_SEND_MULTIPLE and queues files for ntfy's existing share activity. Files are
+ * handed over one at a time, or as one uncompressed ZIP when that mode is selected.
  *
  * ntfy does not return a success result from its share activity. The relay therefore treats the
  * return from ntfy as the end of the dispatch and automatically advances the queue.
@@ -413,13 +413,14 @@ public class MainActivity extends Activity {
         }
 
         String action = intent.getAction();
-        if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+        if (!Intent.ACTION_SEND_MULTIPLE.equals(action)) {
             return;
         }
 
         List<Uri> uris = extractUris(intent);
-        if (uris.isEmpty()) {
-            setStatus("No files were found in the share request.");
+        if (uris.size() < 2) {
+            setStatus("ntfy Batch Share is available only for multiple files.");
+            finishIfQueueEmpty();
             return;
         }
 
@@ -461,6 +462,7 @@ public class MainActivity extends Activity {
                     Toast.makeText(this, failures.get(0), Toast.LENGTH_LONG).show();
                 }
                 renderQueue();
+                finishIfQueueEmpty();
             });
         });
     }
@@ -469,19 +471,12 @@ public class MainActivity extends Activity {
         Set<String> seen = new LinkedHashSet<>();
         List<Uri> result = new ArrayList<>();
 
-        if (Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())) {
-            ArrayList<Parcelable> streams = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
-            if (streams != null) {
-                for (Parcelable parcelable : streams) {
-                    if (parcelable instanceof Uri) {
-                        addUri((Uri) parcelable, seen, result);
-                    }
+        ArrayList<Parcelable> streams = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+        if (streams != null) {
+            for (Parcelable parcelable : streams) {
+                if (parcelable instanceof Uri) {
+                    addUri((Uri) parcelable, seen, result);
                 }
-            }
-        } else {
-            Parcelable stream = intent.getParcelableExtra(Intent.EXTRA_STREAM);
-            if (stream instanceof Uri) {
-                addUri((Uri) stream, seen, result);
             }
         }
 
@@ -577,6 +572,7 @@ public class MainActivity extends Activity {
             saveQueue();
             renderQueue();
             setStatus("A queued file was no longer available and was removed.");
+            finishIfQueueEmpty();
             return;
         }
 
@@ -808,7 +804,9 @@ public class MainActivity extends Activity {
                 ? "Dispatched the ZIP containing " + completedFiles.size() + " files."
                 : "Dispatched “" + completedName + "”.");
         renderQueue();
-        if (!queue.isEmpty()) {
+        if (queue.isEmpty()) {
+            finish();
+        } else {
             sendCurrentFile();
         }
     }
@@ -824,6 +822,7 @@ public class MainActivity extends Activity {
         saveQueue();
         setStatus("Queue cleared.");
         renderQueue();
+        finishIfQueueEmpty();
     }
 
     private void clearActiveTransfer() {
@@ -838,6 +837,12 @@ public class MainActivity extends Activity {
 
     private boolean isZipModeEnabled() {
         return zipModeSwitch != null && zipModeSwitch.isChecked();
+    }
+
+    private void finishIfQueueEmpty() {
+        if (queue.isEmpty()) {
+            finish();
+        }
     }
 
     private void renderQueue() {
