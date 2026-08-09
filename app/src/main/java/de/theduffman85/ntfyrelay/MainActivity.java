@@ -215,7 +215,7 @@ public class MainActivity extends Activity {
         introCard.setElevation(dp(1));
 
         ImageView relayIcon = new ImageView(this);
-        relayIcon.setImageResource(R.drawable.ic_relay_mark);
+        relayIcon.setImageResource(R.mipmap.ic_launcher);
         relayIcon.setContentDescription("ntfy Batch Share icon");
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(56), dp(56));
         iconParams.rightMargin = dp(14);
