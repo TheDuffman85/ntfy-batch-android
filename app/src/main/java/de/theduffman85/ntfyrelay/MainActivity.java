@@ -156,7 +156,7 @@ public class MainActivity extends Activity {
         appBar.setElevation(dp(3));
 
         TextView title = new TextView(this);
-        title.setText("ntfy Multi-file Relay");
+        title.setText("ntfy Batch Share");
         title.setTextSize(20);
         title.setTextColor(Color.WHITE);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
@@ -178,7 +178,7 @@ public class MainActivity extends Activity {
 
         ImageView relayIcon = new ImageView(this);
         relayIcon.setImageResource(R.drawable.ic_relay_mark);
-        relayIcon.setContentDescription("ntfy relay icon");
+        relayIcon.setContentDescription("ntfy Batch Share icon");
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(56), dp(56));
         iconParams.rightMargin = dp(14);
         introCard.addView(relayIcon, iconParams);

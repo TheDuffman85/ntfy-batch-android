@@ -1,4 +1,4 @@
-# ntfy Multi-file Relay
+# ntfy Batch Share
 
 This is a small Android share-target app for the ntfy Android app. It accepts one or more files,
 copies them into a private queue, and opens ntfy's existing share activity for one file at a time or
@@ -7,7 +7,7 @@ It does not modify or fork ntfy.
 
 ## Behavior
 
-1. In a file manager or gallery, select several files and choose **ntfy Multi-file Relay**.
+1. In a file manager or gallery, select several files and choose **ntfy Batch Share**.
 2. The relay copies the incoming `content://` URIs into app-private storage so the queue remains
    readable while ntfy is open.
 3. Leave ZIP mode off to send files individually, or enable **Send all files as one uncompressed
