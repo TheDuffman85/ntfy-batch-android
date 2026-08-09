@@ -62,9 +62,8 @@ import java.util.zip.ZipOutputStream;
  * Receives ACTION_SEND_MULTIPLE and hands files to ntfy's existing share activity one at a time,
  * or as one uncompressed ZIP when that mode is selected.
  *
- * ntfy does not return a success result from its share activity, so returning from ntfy is followed
- * by an explicit confirmation step. This prevents accidentally deleting a file when the user
- * pressed Back instead of Send.
+ * ntfy does not return a success result from its share activity. The relay therefore treats the
+ * return from ntfy as the end of the dispatch and automatically advances the queue.
  */
 public class MainActivity extends Activity {
     private static final int REQUEST_NTFY_SHARE = 1001;
@@ -83,7 +82,8 @@ public class MainActivity extends Activity {
     private static final String PREFS_ACTIVE_FILES = "active_files";
     private static final String PREFS_ACTIVE_ZIP = "active_zip";
     private static final String PREFS_ACTIVE_AWAITING_NTFY = "active_awaiting_ntfy";
-    private static final String PREFS_ACTIVE_AWAITING_CONFIRMATION = "active_awaiting_confirmation";
+    private static final String PREFS_LEGACY_ACTIVE_AWAITING_CONFIRMATION =
+            "active_awaiting_confirmation";
     private static final String PREFS_SEND_AS_ZIP = "send_as_zip";
     private static final String QUEUE_DIRECTORY = "queue";
     private static final String EXTRA_IMPORT_HANDLED =
@@ -100,16 +100,12 @@ public class MainActivity extends Activity {
     private TextView queueCountText;
     private Switch zipModeSwitch;
     private Button sendButton;
-    private Button markSentButton;
-    private Button retryButton;
-    private Button skipButton;
     private Button clearButton;
 
     private QueuedFile activeFile;
     private List<QueuedFile> activeFiles = new ArrayList<>();
     private File activeZipFile;
     private boolean awaitingNtfy;
-    private boolean awaitingConfirmation;
     private boolean preparingZip;
     private boolean importing;
     private boolean restoredTransferAwaitingNtfy;
@@ -139,15 +135,9 @@ public class MainActivity extends Activity {
 
         // If Android recreated this Activity while ntfy was open, the legacy activity-result
         // callback may not be delivered to the new instance. The transfer is still pending, so
-        // offer the same explicit confirmation once this Activity is visible again.
+        // finish it when this Activity becomes visible again.
         restoredTransferAwaitingNtfy = false;
-        awaitingNtfy = false;
-        awaitingConfirmation = true;
-        saveActiveTransfer();
-        setStatus(activeZipFile == null
-                ? "ntfy returned. Confirm whether this file was sent."
-                : "ntfy returned. Confirm whether the ZIP was sent.");
-        renderQueue();
+        completeActiveTransfer();
     }
 
     @Override
@@ -158,19 +148,9 @@ public class MainActivity extends Activity {
         }
 
         // ntfy currently calls finish() without setting RESULT_OK, so the result code cannot tell
-        // us whether the user sent or cancelled. Ask explicitly before removing the queued file.
-        awaitingNtfy = false;
-        if (resultCode == RESULT_OK) {
-            awaitingConfirmation = true;
-            completeActiveFile();
-            return;
-        }
-        awaitingConfirmation = true;
-        saveActiveTransfer();
-        setStatus(activeZipFile == null
-                ? "ntfy returned. Confirm whether this file was sent."
-                : "ntfy returned. Confirm whether the ZIP was sent.");
-        renderQueue();
+        // us whether the user sent or cancelled. Fire-and-forget intentionally treats either
+        // outcome as complete and advances the queue.
+        completeActiveTransfer();
     }
 
     @Override
@@ -227,7 +207,7 @@ public class MainActivity extends Activity {
         introTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         introCopy.addView(introTitle, wrapParams());
         TextView introSubtitle = makeText(
-                "Queue several files here, then send them individually or as one ZIP.",
+                "Queue several files here, then send them individually or as one ZIP. The queue advances automatically.",
                 14, COLOR_MUTED);
         introSubtitle.setPadding(0, dp(4), 0, 0);
         introCopy.addView(introSubtitle, wrapParams());
@@ -270,7 +250,7 @@ public class MainActivity extends Activity {
         zipModeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putBoolean(PREFS_SEND_AS_ZIP, checked).apply();
-            if (!importing && !awaitingNtfy && !awaitingConfirmation && !preparingZip) {
+            if (!importing && !awaitingNtfy && !preparingZip) {
                 setStatus(checked
                         ? "All queued files will be sent as one uncompressed ZIP."
                         : "Queued files will be sent through ntfy one at a time.");
@@ -347,18 +327,6 @@ public class MainActivity extends Activity {
         sendButton = makeButton("Send current file to ntfy", R.drawable.btn_primary,
                 Color.WHITE, v -> sendCurrentFile());
         actionPanel.addView(sendButton, fullWidthButtonParams());
-
-        markSentButton = makeButton("Sent — open next", R.drawable.btn_primary,
-                Color.WHITE, v -> completeActiveFile());
-        actionPanel.addView(markSentButton, fullWidthButtonParams());
-
-        retryButton = makeButton("Retry current file", R.drawable.btn_outline,
-                COLOR_PRIMARY, v -> retryCurrentFile());
-        actionPanel.addView(retryButton, fullWidthButtonParams());
-
-        skipButton = makeButton("Skip current file", R.drawable.btn_text,
-                COLOR_PRIMARY, v -> skipCurrentFile());
-        actionPanel.addView(skipButton, fullWidthButtonParams());
 
         clearButton = makeButton("Clear queued files", R.drawable.btn_text,
                 COLOR_MUTED, v -> clearQueue());
@@ -584,7 +552,7 @@ public class MainActivity extends Activity {
     }
 
     private void sendCurrentFile() {
-        if (importing || preparingZip || awaitingNtfy || awaitingConfirmation || queue.isEmpty()) {
+        if (importing || preparingZip || awaitingNtfy || queue.isEmpty()) {
             return;
         }
 
@@ -638,7 +606,6 @@ public class MainActivity extends Activity {
         activeFiles.add(file);
         activeZipFile = null;
         awaitingNtfy = true;
-        awaitingConfirmation = false;
         saveActiveTransfer();
         setStatus("Sending “" + file.displayName + "” through ntfy…");
         renderQueue();
@@ -809,7 +776,6 @@ public class MainActivity extends Activity {
         shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
         awaitingNtfy = true;
-        awaitingConfirmation = false;
         saveActiveTransfer();
         setStatus("Sending " + files.size() + " files as one uncompressed ZIP through ntfy…");
         renderQueue();
@@ -824,64 +790,31 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void completeActiveFile() {
-        if (!awaitingConfirmation || activeFiles.isEmpty()) {
+    private void completeActiveTransfer() {
+        if (!awaitingNtfy || activeFiles.isEmpty()) {
             return;
         }
 
         List<QueuedFile> completedFiles = new ArrayList<>(activeFiles);
         boolean completedZip = activeZipFile != null;
         String completedName = activeFile == null ? "file" : activeFile.displayName;
-        awaitingConfirmation = false;
+        awaitingNtfy = false;
         for (QueuedFile completed : completedFiles) {
             removeFileFromQueue(completed);
         }
         clearActiveTransfer();
         saveQueue();
         setStatus(completedZip
-                ? "Marked the ZIP containing " + completedFiles.size() + " files as sent."
-                : "Marked “" + completedName + "” as sent.");
+                ? "Dispatched the ZIP containing " + completedFiles.size() + " files."
+                : "Dispatched “" + completedName + "”.");
         renderQueue();
         if (!queue.isEmpty()) {
             sendCurrentFile();
         }
     }
 
-    private void retryCurrentFile() {
-        if (!awaitingConfirmation || activeFiles.isEmpty()) {
-            return;
-        }
-        boolean retryingZip = activeZipFile != null;
-        clearActiveTransfer();
-        awaitingConfirmation = false;
-        setStatus(retryingZip
-                ? "Rebuilding the uncompressed ZIP."
-                : "Retrying the current file.");
-        renderQueue();
-        sendCurrentFile();
-    }
-
-    private void skipCurrentFile() {
-        if (!awaitingConfirmation || activeFiles.isEmpty()) {
-            return;
-        }
-        List<QueuedFile> skippedFiles = new ArrayList<>(activeFiles);
-        boolean skippedZip = activeZipFile != null;
-        String skippedName = activeFile == null ? "file" : activeFile.displayName;
-        awaitingConfirmation = false;
-        clearActiveTransfer();
-        for (QueuedFile skipped : skippedFiles) {
-            removeFileFromQueue(skipped);
-        }
-        saveQueue();
-        setStatus(skippedZip
-                ? "Skipped the ZIP containing " + skippedFiles.size() + " files."
-                : "Skipped “" + skippedName + "”.");
-        renderQueue();
-    }
-
     private void clearQueue() {
-        if (importing || preparingZip || awaitingNtfy || awaitingConfirmation) {
+        if (importing || preparingZip || awaitingNtfy) {
             return;
         }
         for (QueuedFile file : new ArrayList<>(queue)) {
@@ -977,7 +910,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        sendButton.setVisibility(hasQueue && !awaitingConfirmation ? View.VISIBLE : View.GONE);
+        sendButton.setVisibility(hasQueue ? View.VISIBLE : View.GONE);
         if (preparingZip) {
             sendButton.setText("Preparing ZIP…");
         } else if (awaitingNtfy) {
@@ -985,28 +918,14 @@ public class MainActivity extends Activity {
         } else {
             sendButton.setText(isZipModeEnabled()
                     ? "Send all files as one ZIP"
-                    : "Send current file to ntfy");
+                    : "Send queue through ntfy");
         }
         sendButton.setEnabled(hasQueue && !importing && !preparingZip
-                && !awaitingNtfy && !awaitingConfirmation);
+                && !awaitingNtfy);
 
-        zipModeSwitch.setEnabled(!importing && !preparingZip && !awaitingNtfy
-                && !awaitingConfirmation);
+        zipModeSwitch.setEnabled(!importing && !preparingZip && !awaitingNtfy);
 
-        boolean confirmation = awaitingConfirmation && !activeFiles.isEmpty();
-        markSentButton.setText(activeZipFile != null
-                ? "Sent — finish ZIP"
-                : "Sent — open next");
-        retryButton.setText(activeZipFile != null
-                ? "Retry ZIP bundle"
-                : "Retry current file");
-        skipButton.setText(activeZipFile != null
-                ? "Skip ZIP bundle"
-                : "Skip current file");
-        markSentButton.setVisibility(confirmation ? View.VISIBLE : View.GONE);
-        retryButton.setVisibility(confirmation ? View.VISIBLE : View.GONE);
-        skipButton.setVisibility(confirmation ? View.VISIBLE : View.GONE);
-        clearButton.setVisibility(hasQueue && !confirmation ? View.VISIBLE : View.GONE);
+        clearButton.setVisibility(hasQueue ? View.VISIBLE : View.GONE);
         clearButton.setEnabled(!importing && !preparingZip && !awaitingNtfy);
     }
 
@@ -1061,7 +980,7 @@ public class MainActivity extends Activity {
                 .putString(PREFS_ACTIVE_ZIP,
                         activeZipFile == null ? "" : activeZipFile.getPath())
                 .putBoolean(PREFS_ACTIVE_AWAITING_NTFY, awaitingNtfy)
-                .putBoolean(PREFS_ACTIVE_AWAITING_CONFIRMATION, awaitingConfirmation)
+                .remove(PREFS_LEGACY_ACTIVE_AWAITING_CONFIRMATION)
                 .apply();
     }
 
@@ -1095,17 +1014,20 @@ public class MainActivity extends Activity {
             String zipPath = preferences.getString(PREFS_ACTIVE_ZIP, "");
             activeZipFile = zipPath.isEmpty() ? null : new File(zipPath);
             awaitingNtfy = preferences.getBoolean(PREFS_ACTIVE_AWAITING_NTFY, false);
-            awaitingConfirmation = preferences.getBoolean(
-                    PREFS_ACTIVE_AWAITING_CONFIRMATION, false);
-            if (!awaitingNtfy && !awaitingConfirmation) {
+            // An older version persisted a separate confirmation state. Treat that state as a
+            // pending fire-and-forget transfer so an upgrade cannot leave files stranded.
+            boolean legacyAwaitingConfirmation = preferences.getBoolean(
+                    PREFS_LEGACY_ACTIVE_AWAITING_CONFIRMATION, false);
+            if (!awaitingNtfy && !legacyAwaitingConfirmation) {
                 clearActiveTransfer();
                 return;
             }
+            awaitingNtfy = true;
 
             restoredTransferAwaitingNtfy = awaitingNtfy;
             setStatus(activeZipFile == null
-                    ? "A file is awaiting send confirmation."
-                    : "A ZIP is awaiting send confirmation.");
+                    ? "A file is awaiting dispatch."
+                    : "A ZIP is awaiting dispatch.");
             renderQueue();
         } catch (Exception exception) {
             clearPersistedActiveTransfer();
@@ -1117,7 +1039,7 @@ public class MainActivity extends Activity {
                 .remove(PREFS_ACTIVE_FILES)
                 .remove(PREFS_ACTIVE_ZIP)
                 .remove(PREFS_ACTIVE_AWAITING_NTFY)
-                .remove(PREFS_ACTIVE_AWAITING_CONFIRMATION)
+                .remove(PREFS_LEGACY_ACTIVE_AWAITING_CONFIRMATION)
                 .apply();
     }
 

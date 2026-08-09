@@ -14,15 +14,15 @@ It does not modify or fork ntfy.
    ZIP** to send the queue in one message.
 4. Tap the Send button.
 5. Complete the normal ntfy share flow, including choosing the topic and tapping Send.
-6. When ntfy returns, choose the confirmation, retry, or skip action shown.
+6. When ntfy returns, the relay removes that dispatch and automatically opens the next queued file.
 
 To send all queued files in one ntfy message, enable **Send all files as one uncompressed ZIP**
 before tapping Send. The relay creates a ZIP with stored (not deflated) entries, keeps the original
-queued files until confirmation, and removes the whole bundle after **Sent — open next**. The switch
-is remembered for the next share; it is off by default.
+queued files while ntfy is open, then removes the whole bundle when ntfy returns. The switch is
+remembered for the next share; it is off by default.
 
-The confirmation is intentional: ntfy's current share activity finishes without returning a success
-result, so the relay cannot distinguish a successful send from pressing Back.
+The queue is fire-and-forget: ntfy's current share activity does not return a success result, so the
+relay treats returning from ntfy—whether after sending or backing out—as complete and advances.
 
 ## Build
 
