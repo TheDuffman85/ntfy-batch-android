@@ -5,6 +5,13 @@ copies them into a private queue, and hands them to ntfy's existing share activi
 as one uncompressed ZIP.
 It does not modify or fork ntfy.
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/Screenshot-1.jpg" alt="ntfy Batch screenshot 1" width="300">
+  <img src="screenshots/Screenshot-2.jpg" alt="ntfy Batch screenshot 2" width="300">
+</p>
+
 ## Behavior
 
 1. In a file manager or gallery, select several files and choose **ntfy Batch**. The share
