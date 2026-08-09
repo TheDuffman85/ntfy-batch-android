@@ -6,6 +6,7 @@ import android.content.ClipData;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -76,8 +77,14 @@ public class MainActivity extends Activity {
     private static final String NTFY_SHARE_ACTIVITY = "io.heckel.ntfy.ui.ShareActivity";
     private static final String PREFS_NAME = "relay_state";
     private static final String PREFS_QUEUE = "queue";
+    private static final String PREFS_ACTIVE_FILES = "active_files";
+    private static final String PREFS_ACTIVE_ZIP = "active_zip";
+    private static final String PREFS_ACTIVE_AWAITING_NTFY = "active_awaiting_ntfy";
+    private static final String PREFS_ACTIVE_AWAITING_CONFIRMATION = "active_awaiting_confirmation";
     private static final String PREFS_SEND_AS_ZIP = "send_as_zip";
     private static final String QUEUE_DIRECTORY = "queue";
+    private static final String EXTRA_IMPORT_HANDLED =
+            "de.theduffman85.ntfyrelay.extra.IMPORT_HANDLED";
 
     private final List<QueuedFile> queue = new ArrayList<>();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
@@ -102,12 +109,14 @@ public class MainActivity extends Activity {
     private boolean awaitingConfirmation;
     private boolean preparingZip;
     private boolean importing;
+    private boolean restoredTransferAwaitingNtfy;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         loadQueue();
         buildUi();
+        restoreActiveTransfer();
         handleIncomingIntent(getIntent());
     }
 
@@ -116,6 +125,26 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleIncomingIntent(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!restoredTransferAwaitingNtfy || !awaitingNtfy || activeFiles.isEmpty()) {
+            return;
+        }
+
+        // If Android recreated this Activity while ntfy was open, the legacy activity-result
+        // callback may not be delivered to the new instance. The transfer is still pending, so
+        // offer the same explicit confirmation once this Activity is visible again.
+        restoredTransferAwaitingNtfy = false;
+        awaitingNtfy = false;
+        awaitingConfirmation = true;
+        saveActiveTransfer();
+        setStatus(activeZipFile == null
+                ? "ntfy returned. Confirm whether this file was sent."
+                : "ntfy returned. Confirm whether the ZIP was sent.");
+        renderQueue();
     }
 
     @Override
@@ -128,7 +157,13 @@ public class MainActivity extends Activity {
         // ntfy currently calls finish() without setting RESULT_OK, so the result code cannot tell
         // us whether the user sent or cancelled. Ask explicitly before removing the queued file.
         awaitingNtfy = false;
+        if (resultCode == RESULT_OK) {
+            awaitingConfirmation = true;
+            completeActiveFile();
+            return;
+        }
         awaitingConfirmation = true;
+        saveActiveTransfer();
         setStatus(activeZipFile == null
                 ? "ntfy returned. Confirm whether this file was sent."
                 : "ntfy returned. Confirm whether the ZIP was sent.");
@@ -402,6 +437,9 @@ public class MainActivity extends Activity {
         if (intent == null) {
             return;
         }
+        if (intent.getBooleanExtra(EXTRA_IMPORT_HANDLED, false)) {
+            return;
+        }
 
         String action = intent.getAction();
         if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) {
@@ -413,6 +451,11 @@ public class MainActivity extends Activity {
             setStatus("No files were found in the share request.");
             return;
         }
+
+        // The original share Intent can be restored after the Activity is recreated. Do not
+        // import the same source files a second time in that case.
+        intent.putExtra(EXTRA_IMPORT_HANDLED, true);
+        setIntent(intent);
 
         final String incomingMimeType = intent.getType();
         importing = true;
@@ -593,6 +636,7 @@ public class MainActivity extends Activity {
         activeZipFile = null;
         awaitingNtfy = true;
         awaitingConfirmation = false;
+        saveActiveTransfer();
         setStatus("Sending “" + file.displayName + "” through ntfy…");
         renderQueue();
 
@@ -761,6 +805,7 @@ public class MainActivity extends Activity {
 
         awaitingNtfy = true;
         awaitingConfirmation = false;
+        saveActiveTransfer();
         setStatus("Sending " + files.size() + " files as one uncompressed ZIP through ntfy…");
         renderQueue();
 
@@ -783,10 +828,10 @@ public class MainActivity extends Activity {
         boolean completedZip = activeZipFile != null;
         String completedName = activeFile == null ? "file" : activeFile.displayName;
         awaitingConfirmation = false;
-        clearActiveTransfer();
         for (QueuedFile completed : completedFiles) {
             removeFileFromQueue(completed);
         }
+        clearActiveTransfer();
         saveQueue();
         setStatus(completedZip
                 ? "Marked the ZIP containing " + completedFiles.size() + " files as sent."
@@ -850,6 +895,7 @@ public class MainActivity extends Activity {
         activeZipFile = null;
         activeFile = null;
         activeFiles.clear();
+        clearPersistedActiveTransfer();
     }
 
     private boolean isZipModeEnabled() {
@@ -1000,12 +1046,92 @@ public class MainActivity extends Activity {
                 .putString(PREFS_QUEUE, array.toString()).apply();
     }
 
+    private void saveActiveTransfer() {
+        JSONArray array = new JSONArray();
+        for (QueuedFile file : activeFiles) {
+            array.put(file.id);
+        }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(PREFS_ACTIVE_FILES, array.toString())
+                .putString(PREFS_ACTIVE_ZIP,
+                        activeZipFile == null ? "" : activeZipFile.getPath())
+                .putBoolean(PREFS_ACTIVE_AWAITING_NTFY, awaitingNtfy)
+                .putBoolean(PREFS_ACTIVE_AWAITING_CONFIRMATION, awaitingConfirmation)
+                .apply();
+    }
+
+    private void restoreActiveTransfer() {
+        SharedPreferences preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String serialized = preferences.getString(PREFS_ACTIVE_FILES, null);
+        if (serialized == null) {
+            return;
+        }
+
+        try {
+            JSONArray array = new JSONArray(serialized);
+            List<QueuedFile> restoredFiles = new ArrayList<>();
+            for (int index = 0; index < array.length(); index++) {
+                String id = array.getString(index);
+                for (QueuedFile queued : queue) {
+                    if (queued.id.equals(id)) {
+                        restoredFiles.add(queued);
+                        break;
+                    }
+                }
+            }
+
+            if (restoredFiles.isEmpty()) {
+                clearPersistedActiveTransfer();
+                return;
+            }
+
+            activeFiles = restoredFiles;
+            activeFile = restoredFiles.get(0);
+            String zipPath = preferences.getString(PREFS_ACTIVE_ZIP, "");
+            activeZipFile = zipPath.isEmpty() ? null : new File(zipPath);
+            awaitingNtfy = preferences.getBoolean(PREFS_ACTIVE_AWAITING_NTFY, false);
+            awaitingConfirmation = preferences.getBoolean(
+                    PREFS_ACTIVE_AWAITING_CONFIRMATION, false);
+            if (!awaitingNtfy && !awaitingConfirmation) {
+                clearActiveTransfer();
+                return;
+            }
+
+            restoredTransferAwaitingNtfy = awaitingNtfy;
+            setStatus(activeZipFile == null
+                    ? "A file is awaiting send confirmation."
+                    : "A ZIP is awaiting send confirmation.");
+            renderQueue();
+        } catch (Exception exception) {
+            clearPersistedActiveTransfer();
+        }
+    }
+
+    private void clearPersistedActiveTransfer() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .remove(PREFS_ACTIVE_FILES)
+                .remove(PREFS_ACTIVE_ZIP)
+                .remove(PREFS_ACTIVE_AWAITING_NTFY)
+                .remove(PREFS_ACTIVE_AWAITING_CONFIRMATION)
+                .apply();
+    }
+
     private File localFile(QueuedFile file) {
         return new File(getFilesDir(), file.relativePath);
     }
 
     private void removeFileFromQueue(QueuedFile file) {
-        queue.remove(file);
+        // Match by the persisted ID as well as by object identity. A transfer can outlive the
+        // Activity instance, so the object held by activeFiles may not be the same instance that
+        // was loaded into queue when the Activity was recreated.
+        for (int index = 0; index < queue.size(); index++) {
+            QueuedFile queued = queue.get(index);
+            if (queued.id.equals(file.id)) {
+                queue.remove(index);
+                deleteRecursively(localFile(queued).getParentFile());
+                return;
+            }
+        }
         deleteRecursively(localFile(file).getParentFile());
     }
 
