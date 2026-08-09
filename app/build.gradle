@@ -1,11 +1,11 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace 'com.example.ntfyrelay'
+    namespace 'de.theduffman85.ntfyrelay'
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.example.ntfyrelay'
+        applicationId 'de.theduffman85.ntfyrelay'
         minSdk 26
         targetSdk 35
         versionCode 1

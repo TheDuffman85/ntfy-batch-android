@@ -1,4 +1,4 @@
-package com.example.ntfyrelay;
+package de.theduffman85.ntfyrelay;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
@@ -6,6 +6,9 @@ import android.content.ClipData;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -13,9 +16,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Parcelable;
 import android.provider.OpenableColumns;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -27,6 +32,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -51,6 +57,13 @@ import java.util.concurrent.Executors;
  */
 public class MainActivity extends Activity {
     private static final int REQUEST_NTFY_SHARE = 1001;
+    private static final int COLOR_PRIMARY = 0xFF338574;
+    private static final int COLOR_PRIMARY_DARK = 0xFF286D60;
+    private static final int COLOR_BACKGROUND = 0xFFF5F8F7;
+    private static final int COLOR_SURFACE = 0xFFFFFFFF;
+    private static final int COLOR_TEXT = 0xFF1D2B28;
+    private static final int COLOR_MUTED = 0xFF65736F;
+    private static final int COLOR_OUTLINE = 0xFFD7E1DE;
     private static final String NTFY_RELEASE_PACKAGE = "io.heckel.ntfy";
     private static final String NTFY_DEBUG_PACKAGE = "io.heckel.ntfy.debug";
     private static final String NTFY_SHARE_ACTIVITY = "io.heckel.ntfy.ui.ShareActivity";
@@ -65,6 +78,8 @@ public class MainActivity extends Activity {
     private LinearLayout queueContainer;
     private TextView statusText;
     private TextView emptyText;
+    private LinearLayout emptyState;
+    private TextView queueCountText;
     private Button sendButton;
     private Button markSentButton;
     private Button retryButton;
@@ -117,67 +132,184 @@ public class MainActivity extends Activity {
     private void buildUi() {
         final LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(12), dp(16), dp(12));
-        root.setBackgroundColor(0xFFFFFFFF);
-        ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            int top = systemBars.top;
-            int bottom = systemBars.bottom;
-            view.setPadding(dp(16), dp(12) + top, dp(16), dp(12) + bottom);
-            return insets;
-        });
+        root.setBackgroundColor(COLOR_BACKGROUND);
+        root.setClipToPadding(false);
+
+        LinearLayout appBar = new LinearLayout(this);
+        appBar.setGravity(Gravity.CENTER_VERTICAL);
+        appBar.setPadding(dp(20), 0, dp(20), 0);
+        appBar.setBackgroundColor(COLOR_PRIMARY);
+        appBar.setElevation(dp(3));
 
         TextView title = new TextView(this);
         title.setText("ntfy Multi-file Relay");
-        title.setTextSize(22);
-        title.setTextColor(0xFF202124);
+        title.setTextSize(20);
+        title.setTextColor(Color.WHITE);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(title, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        appBar.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(60)));
+        root.addView(appBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(60)));
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(16), dp(16), dp(20));
+
+        LinearLayout introCard = new LinearLayout(this);
+        introCard.setGravity(Gravity.CENTER_VERTICAL);
+        introCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        introCard.setBackground(cardBackground());
+        introCard.setElevation(dp(1));
+
+        ImageView relayIcon = new ImageView(this);
+        relayIcon.setImageResource(R.drawable.ic_relay_mark);
+        relayIcon.setContentDescription("ntfy relay icon");
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(56), dp(56));
+        iconParams.rightMargin = dp(14);
+        introCard.addView(relayIcon, iconParams);
+
+        LinearLayout introCopy = new LinearLayout(this);
+        introCopy.setOrientation(LinearLayout.VERTICAL);
+        TextView introTitle = makeText("Send files through ntfy", 18, COLOR_TEXT);
+        introTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        introCopy.addView(introTitle, wrapParams());
+        TextView introSubtitle = makeText(
+                "Queue several files here, then hand them to ntfy one at a time.",
+                14, COLOR_MUTED);
+        introSubtitle.setPadding(0, dp(4), 0, 0);
+        introCopy.addView(introSubtitle, wrapParams());
+        introCard.addView(introCopy, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        content.addView(introCard, fullWidthParams());
 
         statusText = new TextView(this);
-        statusText.setTextSize(15);
-        statusText.setTextColor(0xFF4A4A4A);
-        statusText.setPadding(0, dp(4), 0, dp(10));
-        root.addView(statusText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        statusText.setTextSize(14);
+        statusText.setTextColor(COLOR_PRIMARY_DARK);
+        statusText.setGravity(Gravity.CENTER_VERTICAL);
+        statusText.setPadding(dp(14), dp(12), dp(14), dp(12));
+        statusText.setBackgroundResource(R.drawable.bg_status);
+        LinearLayout.LayoutParams statusParams = fullWidthParams();
+        statusParams.topMargin = dp(12);
+        content.addView(statusText, statusParams);
+
+        LinearLayout queueHeading = new LinearLayout(this);
+        queueHeading.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams queueHeadingParams = fullWidthParams();
+        queueHeadingParams.topMargin = dp(24);
+        queueHeadingParams.bottomMargin = dp(8);
+        content.addView(queueHeading, queueHeadingParams);
+
+        TextView queueTitle = makeText("QUEUE", 12, COLOR_MUTED);
+        queueTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        queueTitle.setLetterSpacing(0.12f);
+        queueHeading.addView(queueTitle, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        queueCountText = makeText("EMPTY", 12, COLOR_MUTED);
+        queueCountText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        queueCountText.setGravity(Gravity.END);
+        queueHeading.addView(queueCountText, wrapParams());
 
         ScrollView scrollView = new ScrollView(this);
+        scrollView.setFillViewport(true);
+        scrollView.setClipToPadding(false);
         queueContainer = new LinearLayout(this);
         queueContainer.setOrientation(LinearLayout.VERTICAL);
         scrollView.addView(queueContainer, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
-        root.addView(scrollView, new LinearLayout.LayoutParams(
+
+        emptyState = new LinearLayout(this);
+        emptyState.setOrientation(LinearLayout.VERTICAL);
+        emptyState.setGravity(Gravity.CENTER);
+        emptyState.setPadding(dp(24), dp(28), dp(24), dp(28));
+        emptyState.setMinimumHeight(dp(190));
+        emptyState.setBackground(cardBackground());
+        ImageView emptyIcon = new ImageView(this);
+        emptyIcon.setImageResource(R.drawable.ic_file);
+        emptyIcon.setContentDescription(null);
+        emptyState.addView(emptyIcon, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        emptyText = new TextView(this);
+        emptyText.setTextSize(15);
+        emptyText.setTextColor(COLOR_MUTED);
+        emptyText.setGravity(Gravity.CENTER);
+        emptyText.setPadding(0, dp(12), 0, 0);
+        emptyState.addView(emptyText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        queueContainer.addView(emptyState, fullWidthParams());
+
+        LinearLayout scrollWrap = new LinearLayout(this);
+        scrollWrap.setOrientation(LinearLayout.VERTICAL);
+        // Let the queue fill the remaining space while allowing a long queue to scroll.
+        scrollWrap.addView(scrollView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
+        content.addView(scrollWrap, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        emptyText = new TextView(this);
-        emptyText.setTextSize(16);
-        emptyText.setTextColor(0xFF666666);
-        emptyText.setPadding(0, dp(20), 0, dp(20));
-        queueContainer.addView(emptyText);
+        root.addView(content, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        sendButton = makeButton("Send current file to ntfy", v -> sendCurrentFile());
-        root.addView(sendButton, fullWidthButtonParams());
+        LinearLayout actionPanel = new LinearLayout(this);
+        actionPanel.setOrientation(LinearLayout.VERTICAL);
+        actionPanel.setPadding(dp(16), dp(8), dp(16), dp(4));
+        actionPanel.setBackgroundColor(COLOR_SURFACE);
+        actionPanel.setElevation(dp(4));
 
-        markSentButton = makeButton("Sent — open next", v -> completeActiveFile());
-        root.addView(markSentButton, fullWidthButtonParams());
+        sendButton = makeButton("Send current file to ntfy", R.drawable.btn_primary,
+                Color.WHITE, v -> sendCurrentFile());
+        actionPanel.addView(sendButton, fullWidthButtonParams());
 
-        retryButton = makeButton("Retry current file", v -> retryCurrentFile());
-        root.addView(retryButton, fullWidthButtonParams());
+        markSentButton = makeButton("Sent — open next", R.drawable.btn_primary,
+                Color.WHITE, v -> completeActiveFile());
+        actionPanel.addView(markSentButton, fullWidthButtonParams());
 
-        skipButton = makeButton("Skip current file", v -> skipCurrentFile());
-        root.addView(skipButton, fullWidthButtonParams());
+        retryButton = makeButton("Retry current file", R.drawable.btn_outline,
+                COLOR_PRIMARY, v -> retryCurrentFile());
+        actionPanel.addView(retryButton, fullWidthButtonParams());
 
-        clearButton = makeButton("Clear queued files", v -> clearQueue());
-        root.addView(clearButton, fullWidthButtonParams());
+        skipButton = makeButton("Skip current file", R.drawable.btn_text,
+                COLOR_PRIMARY, v -> skipCurrentFile());
+        actionPanel.addView(skipButton, fullWidthButtonParams());
+
+        clearButton = makeButton("Clear queued files", R.drawable.btn_text,
+                COLOR_MUTED, v -> clearQueue());
+        actionPanel.addView(clearButton, fullWidthButtonParams());
+
+        root.addView(actionPanel, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            int top = systemBars.top;
+            int bottom = systemBars.bottom;
+
+            // Draw the teal app bar behind the status bar on edge-to-edge Android versions.
+            appBar.setPadding(dp(20), top, dp(20), 0);
+            LinearLayout.LayoutParams appBarParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(60) + top);
+            appBar.setLayoutParams(appBarParams);
+            actionPanel.setPadding(dp(16), dp(8), dp(16), dp(4) + bottom);
+            return insets;
+        });
 
         setContentView(root);
+        setStatus("Ready to receive files from Android Share.");
         renderQueue();
     }
 
-    private Button makeButton(String label, View.OnClickListener listener) {
+    private Button makeButton(String label, int backgroundResource, int textColor,
+                              View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(15);
+        button.setTextColor(textColor);
+        button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(50));
+        button.setMinWidth(0);
+        button.setPadding(dp(18), 0, dp(18), 0);
+        button.setBackgroundResource(backgroundResource);
         button.setOnClickListener(listener);
         return button;
     }
@@ -187,6 +319,32 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(4);
         return params;
+    }
+
+    private LinearLayout.LayoutParams fullWidthParams() {
+        return new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    }
+
+    private LinearLayout.LayoutParams wrapParams() {
+        return new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    }
+
+    private TextView makeText(String value, int sizeSp, int color) {
+        TextView text = new TextView(this);
+        text.setText(value);
+        text.setTextSize(sizeSp);
+        text.setTextColor(color);
+        return text;
+    }
+
+    private GradientDrawable cardBackground() {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(COLOR_SURFACE);
+        background.setCornerRadius(dp(18));
+        background.setStroke(dp(1), COLOR_OUTLINE);
+        return background;
     }
 
     private void handleIncomingIntent(Intent intent) {
@@ -444,29 +602,72 @@ public class MainActivity extends Activity {
         }
 
         queueContainer.removeAllViews();
+        boolean hasQueue = !queue.isEmpty();
+        queueCountText.setText(hasQueue
+                ? queue.size() + (queue.size() == 1 ? " FILE" : " FILES") : "EMPTY");
+
         if (queue.isEmpty()) {
-            emptyText.setText("No files queued. Use Android’s Share action to send one or more files here.");
-            queueContainer.addView(emptyText);
+            emptyText.setText("No files queued yet. Use Android’s Share action to add one or more files.");
+            queueContainer.addView(emptyState, fullWidthParams());
         } else {
             for (int index = 0; index < queue.size(); index++) {
                 QueuedFile file = queue.get(index);
-                TextView row = new TextView(this);
-                String prefix = index == 0 ? "NEXT  " : (index + 1) + "  ";
-                row.setText(prefix + file.displayName + "\n" + formatBytes(file.size)
-                        + "  •  " + file.mimeType);
-                row.setTextSize(16);
-                row.setTextColor(index == 0 ? 0xFF202124 : 0xFF5F6368);
-                row.setPadding(dp(12), dp(12), dp(12), dp(12));
-                row.setBackgroundColor(index == 0 ? 0xFFE8F0FE : 0xFFF8F9FA);
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                LinearLayout row = new LinearLayout(this);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(14), dp(14), dp(14), dp(14));
+                row.setBackground(queueCardBackground(index == 0));
+                row.setElevation(dp(1));
+
+                ImageView fileIcon = new ImageView(this);
+                fileIcon.setImageResource(R.drawable.ic_file);
+                fileIcon.setContentDescription(null);
+                LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(36), dp(36));
+                iconParams.rightMargin = dp(12);
+                row.addView(fileIcon, iconParams);
+
+                LinearLayout details = new LinearLayout(this);
+                details.setOrientation(LinearLayout.VERTICAL);
+
+                LinearLayout labelRow = new LinearLayout(this);
+                labelRow.setGravity(Gravity.CENTER_VERTICAL);
+                TextView badge = makeText(index == 0 ? "NEXT" : "" + (index + 1), 11,
+                        index == 0 ? COLOR_PRIMARY_DARK : COLOR_MUTED);
+                badge.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+                badge.setGravity(Gravity.CENTER);
+                badge.setIncludeFontPadding(false);
+                badge.setPadding(dp(8), dp(5), dp(8), dp(5));
+                badge.setBackgroundResource(index == 0
+                        ? R.drawable.bg_chip_primary : R.drawable.bg_chip_neutral);
+                labelRow.addView(badge, wrapParams());
+                details.addView(labelRow, wrapParams());
+
+                TextView name = makeText(file.displayName, 16, COLOR_TEXT);
+                name.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+                name.setSingleLine(true);
+                name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+                LinearLayout.LayoutParams nameParams = fullWidthParams();
+                nameParams.topMargin = dp(7);
+                details.addView(name, nameParams);
+
+                TextView metadata = makeText(formatBytes(file.size) + "  •  " + file.mimeType,
+                        13, COLOR_MUTED);
+                metadata.setSingleLine(true);
+                metadata.setEllipsize(TextUtils.TruncateAt.END);
+                LinearLayout.LayoutParams metadataParams = fullWidthParams();
+                metadataParams.topMargin = dp(3);
+                details.addView(metadata, metadataParams);
+
+                row.addView(details, new LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+                LinearLayout.LayoutParams params = fullWidthParams();
                 params.bottomMargin = dp(6);
                 queueContainer.addView(row, params);
             }
         }
 
-        boolean hasQueue = !queue.isEmpty();
         sendButton.setVisibility(hasQueue && !awaitingConfirmation ? View.VISIBLE : View.GONE);
+        sendButton.setText(awaitingNtfy ? "Opening ntfy…" : "Send current file to ntfy");
         sendButton.setEnabled(hasQueue && !importing && !awaitingNtfy && !awaitingConfirmation);
 
         boolean confirmation = awaitingConfirmation && activeFile != null;
@@ -475,6 +676,14 @@ public class MainActivity extends Activity {
         skipButton.setVisibility(confirmation ? View.VISIBLE : View.GONE);
         clearButton.setVisibility(hasQueue && !confirmation ? View.VISIBLE : View.GONE);
         clearButton.setEnabled(!importing && !awaitingNtfy);
+    }
+
+    private GradientDrawable queueCardBackground(boolean next) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(COLOR_SURFACE);
+        background.setCornerRadius(dp(18));
+        background.setStroke(dp(next ? 2 : 1), next ? COLOR_PRIMARY : COLOR_OUTLINE);
+        return background;
     }
 
     private void loadQueue() {
@@ -639,7 +848,7 @@ public class MainActivity extends Activity {
             return object;
         }
 
-        static QueuedFile fromJson(JSONObject object) {
+        static QueuedFile fromJson(JSONObject object) throws JSONException {
             return new QueuedFile(
                     object.getString("id"),
                     object.getString("displayName"),

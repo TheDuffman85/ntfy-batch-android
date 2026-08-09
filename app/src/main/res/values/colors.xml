@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ntfy_primary">#338574</color>
+    <color name="ntfy_primary_dark">#286D60</color>
+    <color name="ntfy_primary_container">#DDF5EF</color>
+    <color name="relay_background">#F5F8F7</color>
+    <color name="relay_surface">#FFFFFF</color>
+    <color name="relay_text">#1D2B28</color>
+    <color name="relay_muted">#65736F</color>
+    <color name="relay_outline">#D7E1DE</color>
+    <color name="relay_disabled">#B7C9C5</color>
+</resources>

@@ -1,0 +1,21 @@
+# Gradle and Android build output
+.gradle/
+**/build/
+
+# Local machine configuration
+local.properties
+
+# Android Studio / IntelliJ metadata
+.idea/
+*.iml
+
+# Native build output
+.externalNativeBuild/
+.cxx/
+
+# Generated packages
+*.apk
+*.aab
+
+# OS metadata
+.DS_Store
