@@ -23,6 +23,7 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -36,6 +37,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -47,9 +49,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.CRC32;
+import java.util.zip.Deflater;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
- * Receives ACTION_SEND_MULTIPLE and hands files to ntfy's existing share activity one at a time.
+ * Receives ACTION_SEND_MULTIPLE and hands files to ntfy's existing share activity one at a time,
+ * or as one uncompressed ZIP when that mode is selected.
  *
  * ntfy does not return a success result from its share activity, so returning from ntfy is followed
  * by an explicit confirmation step. This prevents accidentally deleting a file when the user
@@ -69,6 +76,7 @@ public class MainActivity extends Activity {
     private static final String NTFY_SHARE_ACTIVITY = "io.heckel.ntfy.ui.ShareActivity";
     private static final String PREFS_NAME = "relay_state";
     private static final String PREFS_QUEUE = "queue";
+    private static final String PREFS_SEND_AS_ZIP = "send_as_zip";
     private static final String QUEUE_DIRECTORY = "queue";
 
     private final List<QueuedFile> queue = new ArrayList<>();
@@ -80,6 +88,7 @@ public class MainActivity extends Activity {
     private TextView emptyText;
     private LinearLayout emptyState;
     private TextView queueCountText;
+    private Switch zipModeSwitch;
     private Button sendButton;
     private Button markSentButton;
     private Button retryButton;
@@ -87,8 +96,11 @@ public class MainActivity extends Activity {
     private Button clearButton;
 
     private QueuedFile activeFile;
+    private List<QueuedFile> activeFiles = new ArrayList<>();
+    private File activeZipFile;
     private boolean awaitingNtfy;
     private boolean awaitingConfirmation;
+    private boolean preparingZip;
     private boolean importing;
 
     @Override
@@ -117,7 +129,9 @@ public class MainActivity extends Activity {
         // us whether the user sent or cancelled. Ask explicitly before removing the queued file.
         awaitingNtfy = false;
         awaitingConfirmation = true;
-        setStatus("ntfy returned. Confirm whether this file was sent.");
+        setStatus(activeZipFile == null
+                ? "ntfy returned. Confirm whether this file was sent."
+                : "ntfy returned. Confirm whether the ZIP was sent.");
         renderQueue();
     }
 
@@ -175,7 +189,7 @@ public class MainActivity extends Activity {
         introTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         introCopy.addView(introTitle, wrapParams());
         TextView introSubtitle = makeText(
-                "Queue several files here, then hand them to ntfy one at a time.",
+                "Queue several files here, then send them individually or as one ZIP.",
                 14, COLOR_MUTED);
         introSubtitle.setPadding(0, dp(4), 0, 0);
         introCopy.addView(introSubtitle, wrapParams());
@@ -192,6 +206,43 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams statusParams = fullWidthParams();
         statusParams.topMargin = dp(12);
         content.addView(statusText, statusParams);
+
+        LinearLayout modeCard = new LinearLayout(this);
+        modeCard.setGravity(Gravity.CENTER_VERTICAL);
+        modeCard.setPadding(dp(16), dp(12), dp(12), dp(12));
+        modeCard.setBackground(cardBackground());
+        modeCard.setElevation(dp(1));
+
+        LinearLayout modeCopy = new LinearLayout(this);
+        modeCopy.setOrientation(LinearLayout.VERTICAL);
+        TextView modeTitle = makeText("Send all files as one uncompressed ZIP", 15, COLOR_TEXT);
+        modeTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        modeCopy.addView(modeTitle, wrapParams());
+        TextView modeSubtitle = makeText(
+                "One ntfy message containing every queued file.", 13, COLOR_MUTED);
+        modeSubtitle.setPadding(0, dp(3), 0, 0);
+        modeCopy.addView(modeSubtitle, wrapParams());
+        modeCard.addView(modeCopy, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        zipModeSwitch = new Switch(this);
+        zipModeSwitch.setContentDescription("Send all queued files as one uncompressed ZIP");
+        zipModeSwitch.setChecked(getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getBoolean(PREFS_SEND_AS_ZIP, false));
+        zipModeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                    .putBoolean(PREFS_SEND_AS_ZIP, checked).apply();
+            if (!importing && !awaitingNtfy && !awaitingConfirmation && !preparingZip) {
+                setStatus(checked
+                        ? "All queued files will be sent as one uncompressed ZIP."
+                        : "Queued files will be sent through ntfy one at a time.");
+            }
+            renderQueue();
+        });
+        modeCard.addView(zipModeSwitch, wrapParams());
+        LinearLayout.LayoutParams modeCardParams = fullWidthParams();
+        modeCardParams.topMargin = dp(12);
+        content.addView(modeCard, modeCardParams);
 
         LinearLayout queueHeading = new LinearLayout(this);
         queueHeading.setGravity(Gravity.CENTER_VERTICAL);
@@ -387,7 +438,9 @@ public class MainActivity extends Activity {
 
                 if (failures.isEmpty()) {
                     setStatus(imported.size() + " file" + (imported.size() == 1 ? "" : "s")
-                            + " queued. Send them through ntfy one at a time.");
+                            + " queued. " + (isZipModeEnabled()
+                            ? "Send them as one uncompressed ZIP."
+                            : "Send them through ntfy one at a time."));
                 } else {
                     setStatus(imported.size() + " queued; " + failures.size()
                             + " could not be imported.");
@@ -485,17 +538,7 @@ public class MainActivity extends Activity {
     }
 
     private void sendCurrentFile() {
-        if (importing || awaitingNtfy || awaitingConfirmation || queue.isEmpty()) {
-            return;
-        }
-
-        QueuedFile file = queue.get(0);
-        File localFile = localFile(file);
-        if (!localFile.isFile()) {
-            removeFileFromQueue(file);
-            saveQueue();
-            renderQueue();
-            setStatus("A queued file was no longer available and was removed.");
+        if (importing || preparingZip || awaitingNtfy || awaitingConfirmation || queue.isEmpty()) {
             return;
         }
 
@@ -503,6 +546,23 @@ public class MainActivity extends Activity {
         if (ntfyPackage == null) {
             setStatus("The ntfy Android app is not installed.");
             Toast.makeText(this, "Install ntfy before sending files.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (isZipModeEnabled()) {
+            prepareZipAndSend(new ArrayList<>(queue), ntfyPackage);
+        } else {
+            sendSingleFile(queue.get(0), ntfyPackage);
+        }
+    }
+
+    private void sendSingleFile(QueuedFile file, String ntfyPackage) {
+        File localFile = localFile(file);
+        if (!localFile.isFile()) {
+            removeFileFromQueue(file);
+            saveQueue();
+            renderQueue();
+            setStatus("A queued file was no longer available and was removed.");
             return;
         }
 
@@ -528,6 +588,9 @@ public class MainActivity extends Activity {
         shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
         activeFile = file;
+        activeFiles = new ArrayList<>();
+        activeFiles.add(file);
+        activeZipFile = null;
         awaitingNtfy = true;
         awaitingConfirmation = false;
         setStatus("Sending “" + file.displayName + "” through ntfy…");
@@ -536,7 +599,175 @@ public class MainActivity extends Activity {
         try {
             startActivityForResult(shareIntent, REQUEST_NTFY_SHARE);
         } catch (ActivityNotFoundException exception) {
-            activeFile = null;
+            clearActiveTransfer();
+            awaitingNtfy = false;
+            setStatus("The installed ntfy app does not expose its share activity.");
+            renderQueue();
+        }
+    }
+
+    private void prepareZipAndSend(List<QueuedFile> files, String ntfyPackage) {
+        if (files.isEmpty()) {
+            return;
+        }
+
+        preparingZip = true;
+        setStatus("Preparing an uncompressed ZIP of " + files.size() + " files…");
+        renderQueue();
+
+        ioExecutor.execute(() -> {
+            File zipFile = null;
+            try {
+                zipFile = createUncompressedZip(files);
+                File preparedZip = zipFile;
+                mainHandler.post(() -> {
+                    preparingZip = false;
+                    if (isFinishing() || !queue.containsAll(files)) {
+                        deleteRecursively(preparedZip.getParentFile());
+                        if (!isFinishing()) {
+                            setStatus("The queue changed while the ZIP was being prepared.");
+                        }
+                        renderQueue();
+                        return;
+                    }
+                    sendPreparedZip(files, preparedZip, ntfyPackage);
+                });
+            } catch (Exception exception) {
+                if (zipFile != null) {
+                    deleteRecursively(zipFile.getParentFile());
+                }
+                mainHandler.post(() -> {
+                    preparingZip = false;
+                    setStatus("Could not create the uncompressed ZIP: "
+                            + safeMessage(exception));
+                    Toast.makeText(this, "The files could not be packaged.", Toast.LENGTH_LONG)
+                            .show();
+                    renderQueue();
+                });
+            }
+        });
+    }
+
+    private File createUncompressedZip(List<QueuedFile> files) throws IOException {
+        File queueDirectory = new File(getFilesDir(), QUEUE_DIRECTORY);
+        File bundleDirectory = new File(queueDirectory, "bundle-" + UUID.randomUUID());
+        if (!bundleDirectory.mkdirs()) {
+            throw new IOException("Unable to create ZIP directory");
+        }
+
+        File zipFile = new File(bundleDirectory, "ntfy-files.zip");
+        try {
+            Set<String> entryNames = new LinkedHashSet<>();
+            try (ZipOutputStream zipOutput = new ZipOutputStream(new FileOutputStream(zipFile))) {
+                // STORED entries below are the important part: the file data is not deflated.
+                zipOutput.setLevel(Deflater.NO_COMPRESSION);
+                for (QueuedFile file : files) {
+                    File source = localFile(file);
+                    if (!source.isFile()) {
+                        throw new IOException("Queued file is no longer available: "
+                                + file.displayName);
+                    }
+
+                    ZipEntryMetadata metadata = inspectFileForZip(source);
+                    ZipEntry entry = new ZipEntry(uniqueZipEntryName(file.displayName, entryNames));
+                    entry.setMethod(ZipEntry.STORED);
+                    entry.setSize(metadata.size);
+                    entry.setCompressedSize(metadata.size);
+                    entry.setCrc(metadata.crc);
+                    zipOutput.putNextEntry(entry);
+                    try (InputStream input = new FileInputStream(source)) {
+                        copyStream(input, zipOutput);
+                    }
+                    zipOutput.closeEntry();
+                }
+            }
+            return zipFile;
+        } catch (Exception exception) {
+            deleteRecursively(bundleDirectory);
+            if (exception instanceof IOException) {
+                throw (IOException) exception;
+            }
+            throw new IOException(exception);
+        }
+    }
+
+    private ZipEntryMetadata inspectFileForZip(File source) throws IOException {
+        CRC32 crc = new CRC32();
+        long size = 0;
+        try (InputStream input = new FileInputStream(source)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                crc.update(buffer, 0, read);
+                size += read;
+            }
+        }
+        return new ZipEntryMetadata(size, crc.getValue());
+    }
+
+    private void copyStream(InputStream input, OutputStream output) throws IOException {
+        byte[] buffer = new byte[64 * 1024];
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            output.write(buffer, 0, read);
+        }
+    }
+
+    private String uniqueZipEntryName(String displayName, Set<String> entryNames) {
+        String baseName = safeFileName(displayName);
+        String stem = baseName;
+        String extension = "";
+        int extensionStart = baseName.lastIndexOf('.');
+        if (extensionStart > 0) {
+            stem = baseName.substring(0, extensionStart);
+            extension = baseName.substring(extensionStart);
+        }
+
+        String candidate = baseName;
+        int duplicateNumber = 2;
+        while (!entryNames.add(candidate)) {
+            candidate = stem + " (" + duplicateNumber++ + ")" + extension;
+        }
+        return candidate;
+    }
+
+    private void sendPreparedZip(List<QueuedFile> files, File zipFile, String ntfyPackage) {
+        if (!zipFile.isFile()) {
+            deleteRecursively(zipFile.getParentFile());
+            setStatus("The prepared ZIP was no longer available.");
+            return;
+        }
+
+        Uri shareUri;
+        activeFile = files.get(0);
+        activeFiles = new ArrayList<>(files);
+        activeZipFile = zipFile;
+        try {
+            shareUri = FileProvider.getUriForFile(
+                    this, getPackageName() + ".fileprovider", zipFile);
+        } catch (IllegalArgumentException exception) {
+            clearActiveTransfer();
+            setStatus("Could not prepare the ZIP for sharing.");
+            renderQueue();
+            return;
+        }
+
+        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+        shareIntent.setComponent(new ComponentName(ntfyPackage, NTFY_SHARE_ACTIVITY));
+        shareIntent.setType("application/zip");
+        shareIntent.putExtra(Intent.EXTRA_STREAM, shareUri);
+        shareIntent.setClipData(ClipData.newRawUri("ntfy-files.zip", shareUri));
+        shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        awaitingNtfy = true;
+        awaitingConfirmation = false;
+        setStatus("Sending " + files.size() + " files as one uncompressed ZIP through ntfy…");
+        renderQueue();
+
+        try {
+            startActivityForResult(shareIntent, REQUEST_NTFY_SHARE);
+        } catch (ActivityNotFoundException exception) {
+            clearActiveTransfer();
             awaitingNtfy = false;
             setStatus("The installed ntfy app does not expose its share activity.");
             renderQueue();
@@ -544,15 +775,22 @@ public class MainActivity extends Activity {
     }
 
     private void completeActiveFile() {
-        if (!awaitingConfirmation || activeFile == null) {
+        if (!awaitingConfirmation || activeFiles.isEmpty()) {
             return;
         }
-        QueuedFile completed = activeFile;
-        activeFile = null;
+
+        List<QueuedFile> completedFiles = new ArrayList<>(activeFiles);
+        boolean completedZip = activeZipFile != null;
+        String completedName = activeFile == null ? "file" : activeFile.displayName;
         awaitingConfirmation = false;
-        removeFileFromQueue(completed);
+        clearActiveTransfer();
+        for (QueuedFile completed : completedFiles) {
+            removeFileFromQueue(completed);
+        }
         saveQueue();
-        setStatus("Marked “" + completed.displayName + "” as sent.");
+        setStatus(completedZip
+                ? "Marked the ZIP containing " + completedFiles.size() + " files as sent."
+                : "Marked “" + completedName + "” as sent.");
         renderQueue();
         if (!queue.isEmpty()) {
             sendCurrentFile();
@@ -560,31 +798,40 @@ public class MainActivity extends Activity {
     }
 
     private void retryCurrentFile() {
-        if (!awaitingConfirmation) {
+        if (!awaitingConfirmation || activeFiles.isEmpty()) {
             return;
         }
+        boolean retryingZip = activeZipFile != null;
+        clearActiveTransfer();
         awaitingConfirmation = false;
-        activeFile = null;
-        setStatus("Retrying the current file.");
+        setStatus(retryingZip
+                ? "Rebuilding the uncompressed ZIP."
+                : "Retrying the current file.");
         renderQueue();
         sendCurrentFile();
     }
 
     private void skipCurrentFile() {
-        if (!awaitingConfirmation || activeFile == null) {
+        if (!awaitingConfirmation || activeFiles.isEmpty()) {
             return;
         }
-        QueuedFile skipped = activeFile;
-        activeFile = null;
+        List<QueuedFile> skippedFiles = new ArrayList<>(activeFiles);
+        boolean skippedZip = activeZipFile != null;
+        String skippedName = activeFile == null ? "file" : activeFile.displayName;
         awaitingConfirmation = false;
-        removeFileFromQueue(skipped);
+        clearActiveTransfer();
+        for (QueuedFile skipped : skippedFiles) {
+            removeFileFromQueue(skipped);
+        }
         saveQueue();
-        setStatus("Skipped “" + skipped.displayName + "”.");
+        setStatus(skippedZip
+                ? "Skipped the ZIP containing " + skippedFiles.size() + " files."
+                : "Skipped “" + skippedName + "”.");
         renderQueue();
     }
 
     private void clearQueue() {
-        if (importing || awaitingNtfy || awaitingConfirmation) {
+        if (importing || preparingZip || awaitingNtfy || awaitingConfirmation) {
             return;
         }
         for (QueuedFile file : new ArrayList<>(queue)) {
@@ -594,6 +841,19 @@ public class MainActivity extends Activity {
         saveQueue();
         setStatus("Queue cleared.");
         renderQueue();
+    }
+
+    private void clearActiveTransfer() {
+        if (activeZipFile != null) {
+            deleteRecursively(activeZipFile.getParentFile());
+        }
+        activeZipFile = null;
+        activeFile = null;
+        activeFiles.clear();
+    }
+
+    private boolean isZipModeEnabled() {
+        return zipModeSwitch != null && zipModeSwitch.isChecked();
     }
 
     private void renderQueue() {
@@ -667,15 +927,36 @@ public class MainActivity extends Activity {
         }
 
         sendButton.setVisibility(hasQueue && !awaitingConfirmation ? View.VISIBLE : View.GONE);
-        sendButton.setText(awaitingNtfy ? "Opening ntfy…" : "Send current file to ntfy");
-        sendButton.setEnabled(hasQueue && !importing && !awaitingNtfy && !awaitingConfirmation);
+        if (preparingZip) {
+            sendButton.setText("Preparing ZIP…");
+        } else if (awaitingNtfy) {
+            sendButton.setText("Opening ntfy…");
+        } else {
+            sendButton.setText(isZipModeEnabled()
+                    ? "Send all files as one ZIP"
+                    : "Send current file to ntfy");
+        }
+        sendButton.setEnabled(hasQueue && !importing && !preparingZip
+                && !awaitingNtfy && !awaitingConfirmation);
 
-        boolean confirmation = awaitingConfirmation && activeFile != null;
+        zipModeSwitch.setEnabled(!importing && !preparingZip && !awaitingNtfy
+                && !awaitingConfirmation);
+
+        boolean confirmation = awaitingConfirmation && !activeFiles.isEmpty();
+        markSentButton.setText(activeZipFile != null
+                ? "Sent — finish ZIP"
+                : "Sent — open next");
+        retryButton.setText(activeZipFile != null
+                ? "Retry ZIP bundle"
+                : "Retry current file");
+        skipButton.setText(activeZipFile != null
+                ? "Skip ZIP bundle"
+                : "Skip current file");
         markSentButton.setVisibility(confirmation ? View.VISIBLE : View.GONE);
         retryButton.setVisibility(confirmation ? View.VISIBLE : View.GONE);
         skipButton.setVisibility(confirmation ? View.VISIBLE : View.GONE);
         clearButton.setVisibility(hasQueue && !confirmation ? View.VISIBLE : View.GONE);
-        clearButton.setEnabled(!importing && !awaitingNtfy);
+        clearButton.setEnabled(!importing && !preparingZip && !awaitingNtfy);
     }
 
     private GradientDrawable queueCardBackground(boolean next) {
@@ -855,6 +1136,16 @@ public class MainActivity extends Activity {
                     object.getString("mimeType"),
                     object.getString("relativePath"),
                     object.optLong("size", 0));
+        }
+    }
+
+    private static final class ZipEntryMetadata {
+        final long size;
+        final long crc;
+
+        ZipEntryMetadata(long size, long crc) {
+            this.size = size;
+            this.crc = crc;
         }
     }
 }
