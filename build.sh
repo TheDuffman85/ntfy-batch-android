@@ -97,8 +97,22 @@ if [[ ! -f "$project_root/local.properties" ]] || ! grep -q '^sdk\.dir=' "$proje
 fi
 
 cd "$project_root"
-"$project_root/gradlew" :app:assembleDebug "$@"
+
+build_types=('release' 'debug')
+if [[ "${1:-}" == 'release' || "${1:-}" == 'debug' ]]; then
+    build_types=("$1")
+    shift
+fi
+
+gradle_tasks=()
+for build_type in "${build_types[@]}"; do
+    gradle_tasks+=(":app:assemble${build_type^}")
+done
+
+"$project_root/gradlew" "${gradle_tasks[@]}" "$@"
 
 version_name="$(sed -n 's/^VERSION_NAME=//p' "$project_root/gradle.properties")"
-apk_path="$project_root/app/build/outputs/apk/debug/ntfy-batch-v${version_name}-debug.apk"
-printf 'Built APK: %s\n' "$apk_path"
+for build_type in "${build_types[@]}"; do
+    apk_path="$project_root/app/build/outputs/apk/$build_type/ntfy-batch-v${version_name}-${build_type}.apk"
+    printf 'Built APK: %s\n' "$apk_path"
+done

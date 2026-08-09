@@ -49,17 +49,22 @@ installed:
 The script prefers `JAVA_HOME`, then a JDK on `PATH`, and finally a compatible JDK already cached by
 Gradle, so a system JDK installation is not required when Gradle has already downloaded one. It
 also detects Android SDK platform 35 in `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and common SDK
-locations, including temporary SDK directories under `/tmp`. It produces a versioned APK such as
-`app/build/outputs/apk/debug/ntfy-batch-v0.2.0-debug.apk`. You can also run the Gradle task directly:
+locations, including temporary SDK directories under `/tmp`. By default, it produces a versioned
+release APK and debug APK, such as `app/build/outputs/apk/release/ntfy-batch-v0.2.0-release.apk`
+and `app/build/outputs/apk/debug/ntfy-batch-v0.2.0-debug.apk`. To build only the release APK, run
+`./build.sh release`; to build only the debug APK, run `./build.sh debug`. You can also run the
+Gradle tasks directly:
 
 ```sh
+./gradlew :app:assembleRelease
+# or
 ./gradlew :app:assembleDebug
 ```
 
 Install the APK with Android Studio or:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/ntfy-batch-v0.2.0-debug.apk
+adb install -r app/build/outputs/apk/release/ntfy-batch-v0.2.0-release.apk
 ```
 
 ## Versioning
