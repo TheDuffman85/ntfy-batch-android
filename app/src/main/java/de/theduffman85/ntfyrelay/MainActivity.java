@@ -248,12 +248,20 @@ public class MainActivity extends Activity {
         zipModeSwitch.setChecked(getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getBoolean(PREFS_SEND_AS_ZIP, false));
         zipModeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                    .putBoolean(PREFS_SEND_AS_ZIP, checked).apply();
+            // Persist this setting before continuing. The Activity can finish as soon as the
+            // queue is dispatched, so the selected mode must not depend on a deferred write.
+            boolean modeSaved = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                    .putBoolean(PREFS_SEND_AS_ZIP, checked).commit();
             if (!importing && !awaitingNtfy && !preparingZip) {
-                setStatus(checked
-                        ? "All queued files will be sent as one uncompressed ZIP."
-                        : "Queued files will be sent through ntfy one at a time.");
+                if (modeSaved) {
+                    setStatus(checked
+                            ? "All queued files will be sent as one uncompressed ZIP."
+                            : "Queued files will be sent through ntfy one at a time.");
+                } else {
+                    setStatus("The ZIP mode setting could not be saved permanently.");
+                    Toast.makeText(this, "The ZIP mode setting could not be saved.",
+                            Toast.LENGTH_LONG).show();
+                }
             }
             renderQueue();
         });
