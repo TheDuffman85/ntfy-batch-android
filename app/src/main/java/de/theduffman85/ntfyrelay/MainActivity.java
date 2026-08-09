@@ -43,9 +43,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -699,7 +702,9 @@ public class MainActivity extends Activity {
             throw new IOException("Unable to create ZIP directory");
         }
 
-        File zipFile = new File(bundleDirectory, "ntfy-files.zip");
+        String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+                .format(new Date());
+        File zipFile = new File(bundleDirectory, "ntfy-files-" + timestamp + ".zip");
         try {
             Set<String> entryNames = new LinkedHashSet<>();
             try (ZipOutputStream zipOutput = new ZipOutputStream(new FileOutputStream(zipFile))) {
@@ -800,7 +805,7 @@ public class MainActivity extends Activity {
         shareIntent.setComponent(new ComponentName(ntfyPackage, NTFY_SHARE_ACTIVITY));
         shareIntent.setType("application/zip");
         shareIntent.putExtra(Intent.EXTRA_STREAM, shareUri);
-        shareIntent.setClipData(ClipData.newRawUri("ntfy-files.zip", shareUri));
+        shareIntent.setClipData(ClipData.newRawUri(zipFile.getName(), shareUri));
         shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
         awaitingNtfy = true;
