@@ -887,12 +887,13 @@ public class MainActivity extends Activity {
             emptyText.setText("No files queued yet. Use Android’s Share action to add one or more files.");
             queueContainer.addView(emptyState, fullWidthParams());
         } else {
+            boolean zipMode = isZipModeEnabled();
             for (int index = 0; index < queue.size(); index++) {
                 QueuedFile file = queue.get(index);
                 LinearLayout row = new LinearLayout(this);
                 row.setGravity(Gravity.CENTER_VERTICAL);
                 row.setPadding(dp(14), dp(14), dp(14), dp(14));
-                row.setBackground(queueCardBackground(index == 0));
+                row.setBackground(queueCardBackground(!zipMode && index == 0));
                 row.setElevation(dp(1));
 
                 ImageView fileIcon = new ImageView(this);
@@ -907,13 +908,15 @@ public class MainActivity extends Activity {
 
                 LinearLayout labelRow = new LinearLayout(this);
                 labelRow.setGravity(Gravity.CENTER_VERTICAL);
-                TextView badge = makeText(index == 0 ? "NEXT" : "" + (index + 1), 11,
-                        index == 0 ? colorAccent : colorMuted);
+                boolean nextFile = !zipMode && index == 0;
+                TextView badge = makeText(zipMode ? "ZIP"
+                                : nextFile ? "NEXT" : "" + (index + 1), 11,
+                        zipMode || nextFile ? colorAccent : colorMuted);
                 badge.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
                 badge.setGravity(Gravity.CENTER);
                 badge.setIncludeFontPadding(false);
                 badge.setPadding(dp(8), dp(5), dp(8), dp(5));
-                badge.setBackgroundResource(index == 0
+                badge.setBackgroundResource(zipMode || nextFile
                         ? R.drawable.bg_chip_primary : R.drawable.bg_chip_neutral);
                 labelRow.addView(badge, wrapParams());
                 details.addView(labelRow, wrapParams());
