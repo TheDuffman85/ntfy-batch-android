@@ -95,13 +95,11 @@ public class MainActivity extends Activity {
     private int colorOnPrimary;
 
     private LinearLayout queueContainer;
-    private TextView statusText;
     private TextView emptyText;
     private LinearLayout emptyState;
     private TextView queueCountText;
     private Switch zipModeSwitch;
     private Button sendButton;
-    private Button clearButton;
 
     private QueuedFile activeFile;
     private List<QueuedFile> activeFiles = new ArrayList<>();
@@ -231,16 +229,6 @@ public class MainActivity extends Activity {
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         content.addView(introCard, fullWidthParams());
 
-        statusText = new TextView(this);
-        statusText.setTextSize(14);
-        statusText.setTextColor(colorAccent);
-        statusText.setGravity(Gravity.CENTER_VERTICAL);
-        statusText.setPadding(dp(14), dp(12), dp(14), dp(12));
-        statusText.setBackgroundResource(R.drawable.bg_status);
-        LinearLayout.LayoutParams statusParams = fullWidthParams();
-        statusParams.topMargin = dp(12);
-        content.addView(statusText, statusParams);
-
         LinearLayout modeCard = new LinearLayout(this);
         modeCard.setGravity(Gravity.CENTER_VERTICAL);
         modeCard.setPadding(dp(16), dp(12), dp(12), dp(12));
@@ -268,23 +256,15 @@ public class MainActivity extends Activity {
             // queue is dispatched, so the selected mode must not depend on a deferred write.
             boolean modeSaved = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                     .putBoolean(PREFS_SEND_AS_ZIP, checked).commit();
-            if (!importing && !awaitingNtfy && !preparingZip) {
-                if (modeSaved) {
-                    setStatus(checked
-                            ? "All queued files will be sent as one uncompressed ZIP."
-                            : "Queued files will be sent through ntfy one at a time.");
-                } else {
-                    setStatus("The ZIP mode setting could not be saved permanently.");
-                    Toast.makeText(this, "The ZIP mode setting could not be saved.",
-                            Toast.LENGTH_LONG).show();
-                }
+            if (!modeSaved) {
+                Toast.makeText(this, "The ZIP mode setting could not be saved.",
+                        Toast.LENGTH_LONG).show();
             }
             renderQueue();
         });
         modeCard.addView(zipModeSwitch, wrapParams());
         LinearLayout.LayoutParams modeCardParams = fullWidthParams();
         modeCardParams.topMargin = dp(12);
-        content.addView(modeCard, modeCardParams);
 
         LinearLayout queueHeading = new LinearLayout(this);
         queueHeading.setGravity(Gravity.CENTER_VERTICAL);
@@ -338,6 +318,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
         content.addView(scrollWrap, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        content.addView(modeCard, modeCardParams);
 
         root.addView(content, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -351,10 +332,6 @@ public class MainActivity extends Activity {
         sendButton = makeButton("Send current file to ntfy", R.drawable.btn_primary,
                 colorOnPrimary, v -> sendCurrentFile());
         actionPanel.addView(sendButton, fullWidthButtonParams());
-
-        clearButton = makeButton("Clear queued files", R.drawable.btn_text,
-                colorMuted, v -> clearQueue());
-        actionPanel.addView(clearButton, fullWidthButtonParams());
 
         TextView versionText = makeText(
                 getString(R.string.version_label, BuildConfig.VERSION_NAME), 12, colorMuted);
@@ -380,7 +357,6 @@ public class MainActivity extends Activity {
         });
 
         setContentView(root);
-        setStatus("Ready to receive files from Android Share.");
         renderQueue();
     }
 
@@ -449,7 +425,7 @@ public class MainActivity extends Activity {
 
         List<Uri> uris = extractUris(intent);
         if (uris.size() < 2) {
-            setStatus(getString(R.string.multi_file_only));
+            Toast.makeText(this, getString(R.string.multi_file_only), Toast.LENGTH_LONG).show();
             finishIfQueueEmpty();
             return;
         }
@@ -464,8 +440,6 @@ public class MainActivity extends Activity {
         List<QueuedFile> replacedFiles = removeReplaceableQueuedFiles();
         saveQueue();
         importing = true;
-        setStatus("Replacing the queue with " + uris.size() + " shared file"
-                + (uris.size() == 1 ? "" : "s") + "…");
         renderQueue();
 
         ioExecutor.execute(() -> {
@@ -506,14 +480,7 @@ public class MainActivity extends Activity {
                 importing = false;
                 saveQueue();
 
-                if (failures.isEmpty()) {
-                    setStatus(imported.size() + " file" + (imported.size() == 1 ? "" : "s")
-                            + " queued. " + (isZipModeEnabled()
-                            ? "Send them as one uncompressed ZIP."
-                            : "Send them through ntfy one at a time."));
-                } else {
-                    setStatus(imported.size() + " queued; " + failures.size()
-                            + " could not be imported.");
+                if (!failures.isEmpty()) {
                     Toast.makeText(this, failures.get(0), Toast.LENGTH_LONG).show();
                 }
                 renderQueue();
@@ -631,7 +598,6 @@ public class MainActivity extends Activity {
 
         String ntfyPackage = findInstalledNtfyPackage();
         if (ntfyPackage == null) {
-            setStatus("The ntfy Android app is not installed.");
             Toast.makeText(this, "Install ntfy before sending files.", Toast.LENGTH_LONG).show();
             return;
         }
@@ -649,7 +615,8 @@ public class MainActivity extends Activity {
             removeFileFromQueue(file);
             saveQueue();
             renderQueue();
-            setStatus("A queued file was no longer available and was removed.");
+            Toast.makeText(this, "A queued file was no longer available and was removed.",
+                    Toast.LENGTH_LONG).show();
             finishIfQueueEmpty();
             return;
         }
@@ -659,7 +626,8 @@ public class MainActivity extends Activity {
             shareUri = FileProvider.getUriForFile(
                     this, getPackageName() + ".fileprovider", localFile);
         } catch (IllegalArgumentException exception) {
-            setStatus("Could not prepare the queued file for sharing.");
+            Toast.makeText(this, "Could not prepare the queued file for sharing.",
+                    Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -681,7 +649,6 @@ public class MainActivity extends Activity {
         activeZipFile = null;
         awaitingNtfy = true;
         saveActiveTransfer();
-        setStatus("Sending “" + file.displayName + "” through ntfy…");
         renderQueue();
 
         try {
@@ -689,7 +656,8 @@ public class MainActivity extends Activity {
         } catch (ActivityNotFoundException exception) {
             clearActiveTransfer();
             awaitingNtfy = false;
-            setStatus("The installed ntfy app does not expose its share activity.");
+            Toast.makeText(this, "The installed ntfy app does not expose its share activity.",
+                    Toast.LENGTH_LONG).show();
             renderQueue();
         }
     }
@@ -700,7 +668,6 @@ public class MainActivity extends Activity {
         }
 
         preparingZip = true;
-        setStatus("Preparing an uncompressed ZIP of " + files.size() + " files…");
         renderQueue();
 
         ioExecutor.execute(() -> {
@@ -713,7 +680,9 @@ public class MainActivity extends Activity {
                     if (isFinishing() || !queue.containsAll(files)) {
                         deleteRecursively(preparedZip.getParentFile());
                         if (!isFinishing()) {
-                            setStatus("The queue changed while the ZIP was being prepared.");
+                            Toast.makeText(this,
+                                    "The queue changed while the ZIP was being prepared.",
+                                    Toast.LENGTH_LONG).show();
                         }
                         renderQueue();
                         return;
@@ -726,8 +695,6 @@ public class MainActivity extends Activity {
                 }
                 mainHandler.post(() -> {
                     preparingZip = false;
-                    setStatus("Could not create the uncompressed ZIP: "
-                            + safeMessage(exception));
                     Toast.makeText(this, "The files could not be packaged.", Toast.LENGTH_LONG)
                             .show();
                     renderQueue();
@@ -824,7 +791,8 @@ public class MainActivity extends Activity {
     private void sendPreparedZip(List<QueuedFile> files, File zipFile, String ntfyPackage) {
         if (!zipFile.isFile()) {
             deleteRecursively(zipFile.getParentFile());
-            setStatus("The prepared ZIP was no longer available.");
+            Toast.makeText(this, "The prepared ZIP was no longer available.",
+                    Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -837,7 +805,8 @@ public class MainActivity extends Activity {
                     this, getPackageName() + ".fileprovider", zipFile);
         } catch (IllegalArgumentException exception) {
             clearActiveTransfer();
-            setStatus("Could not prepare the ZIP for sharing.");
+            Toast.makeText(this, "Could not prepare the ZIP for sharing.",
+                    Toast.LENGTH_LONG).show();
             renderQueue();
             return;
         }
@@ -851,7 +820,6 @@ public class MainActivity extends Activity {
 
         awaitingNtfy = true;
         saveActiveTransfer();
-        setStatus("Sending " + files.size() + " files as one uncompressed ZIP through ntfy…");
         renderQueue();
 
         try {
@@ -859,7 +827,8 @@ public class MainActivity extends Activity {
         } catch (ActivityNotFoundException exception) {
             clearActiveTransfer();
             awaitingNtfy = false;
-            setStatus("The installed ntfy app does not expose its share activity.");
+            Toast.makeText(this, "The installed ntfy app does not expose its share activity.",
+                    Toast.LENGTH_LONG).show();
             renderQueue();
         }
     }
@@ -870,54 +839,18 @@ public class MainActivity extends Activity {
         }
 
         List<QueuedFile> completedFiles = new ArrayList<>(activeFiles);
-        boolean completedZip = activeZipFile != null;
-        String completedName = activeFile == null ? "file" : activeFile.displayName;
         awaitingNtfy = false;
         for (QueuedFile completed : completedFiles) {
             removeFileFromQueue(completed);
         }
         clearActiveTransfer();
         saveQueue();
-        setStatus(completedZip
-                ? "Dispatched the ZIP containing " + completedFiles.size() + " files."
-                : "Dispatched “" + completedName + "”.");
         renderQueue();
         if (queue.isEmpty()) {
             finish();
         } else {
             sendCurrentFile();
         }
-    }
-
-    private void clearQueue() {
-        if (importing || preparingZip || awaitingNtfy) {
-            return;
-        }
-
-        // Clear the durable state before leaving the Activity. Using commit() here is deliberate:
-        // this action immediately finishes when the queue becomes empty, so a deferred apply()
-        // must not be the only record that the user explicitly cleared the queue.
-        queue.clear();
-        boolean stateCleared = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                .remove(PREFS_QUEUE)
-                .remove(PREFS_ACTIVE_FILES)
-                .remove(PREFS_ACTIVE_ZIP)
-                .remove(PREFS_ACTIVE_AWAITING_NTFY)
-                .remove(PREFS_LEGACY_ACTIVE_AWAITING_CONFIRMATION)
-                .commit();
-
-        // Delete the complete directory rather than only the files represented by the current
-        // in-memory queue. This also removes abandoned imports and prepared ZIP bundles.
-        boolean filesCleared = deleteRecursively(new File(getFilesDir(), QUEUE_DIRECTORY));
-        if (stateCleared && filesCleared) {
-            setStatus("Queue cleared.");
-        } else {
-            setStatus("Queue cleared, but some temporary data could not be removed.");
-            Toast.makeText(this, "Some temporary queue data could not be removed.",
-                    Toast.LENGTH_LONG).show();
-        }
-        renderQueue();
-        finishIfQueueEmpty();
     }
 
     private void clearActiveTransfer() {
@@ -1024,9 +957,6 @@ public class MainActivity extends Activity {
                 && !awaitingNtfy);
 
         zipModeSwitch.setEnabled(!importing && !preparingZip && !awaitingNtfy);
-
-        clearButton.setVisibility(hasQueue ? View.VISIBLE : View.GONE);
-        clearButton.setEnabled(!importing && !preparingZip && !awaitingNtfy);
     }
 
     private GradientDrawable queueCardBackground(boolean next) {
@@ -1125,9 +1055,6 @@ public class MainActivity extends Activity {
             awaitingNtfy = true;
 
             restoredTransferAwaitingNtfy = awaitingNtfy;
-            setStatus(activeZipFile == null
-                    ? "A file is awaiting dispatch."
-                    : "A ZIP is awaiting dispatch.");
             renderQueue();
         } catch (Exception exception) {
             clearPersistedActiveTransfer();
@@ -1224,12 +1151,6 @@ public class MainActivity extends Activity {
         }
         // Queue files are private temporary copies created by this app.
         return childrenDeleted && (file.delete() || !file.exists());
-    }
-
-    private void setStatus(String message) {
-        if (statusText != null) {
-            statusText.setText(message);
-        }
     }
 
     private String safeMessage(Exception exception) {
