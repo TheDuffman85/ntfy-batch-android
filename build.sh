@@ -99,5 +99,5 @@ fi
 cd "$project_root"
 "$project_root/gradlew" :app:assembleDebug "$@"
 
-apk_path="$project_root/app/build/outputs/apk/debug/app-debug.apk"
+apk_path="$project_root/app/build/outputs/apk/debug/ntfy-batch-share.apk"
 printf 'Built APK: %s\n' "$apk_path"

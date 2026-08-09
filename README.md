@@ -38,7 +38,7 @@ The script prefers `JAVA_HOME`, then a JDK on `PATH`, and finally a compatible J
 Gradle, so a system JDK installation is not required when Gradle has already downloaded one. It
 also detects Android SDK platform 35 in `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and common SDK
 locations, including temporary SDK directories under `/tmp`. It produces
-`app/build/outputs/apk/debug/app-debug.apk`. You can also run the Gradle task directly:
+`app/build/outputs/apk/debug/ntfy-batch-share.apk`. You can also run the Gradle task directly:
 
 ```sh
 ./gradlew :app:assembleDebug
@@ -47,7 +47,7 @@ locations, including temporary SDK directories under `/tmp`. It produces
 Install the APK with Android Studio or:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/ntfy-batch-share.apk
 ```
 
 ## Compatibility note

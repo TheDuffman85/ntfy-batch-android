@@ -18,6 +18,12 @@ android {
     }
 }
 
+android.applicationVariants.all { variant ->
+    variant.outputs.all {
+        outputFileName = 'ntfy-batch-share.apk'
+    }
+}
+
 dependencies {
     implementation 'androidx.core:core:1.16.0'
 }
