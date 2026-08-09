@@ -1,4 +1,4 @@
-# ntfy Batch Share
+# ntfy Batch
 
 This is a small Android share-target app for the ntfy Android app. It accepts multiple files,
 copies them into a private queue, and hands them to ntfy's existing share activity one at a time or
@@ -7,7 +7,7 @@ It does not modify or fork ntfy.
 
 ## Behavior
 
-1. In a file manager or gallery, select several files and choose **ntfy Batch Share**. The share
+1. In a file manager or gallery, select several files and choose **ntfy Batch**. The share
    target is available only for multi-file shares.
 2. The relay clears any unsent files from an earlier batch, then copies the incoming `content://`
    URIs into app-private storage. The batch-share UI stays open while the queue contains files.
@@ -40,8 +40,8 @@ installed:
 The script prefers `JAVA_HOME`, then a JDK on `PATH`, and finally a compatible JDK already cached by
 Gradle, so a system JDK installation is not required when Gradle has already downloaded one. It
 also detects Android SDK platform 35 in `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and common SDK
-locations, including temporary SDK directories under `/tmp`. It produces
-`app/build/outputs/apk/debug/ntfy-batch-share.apk`. You can also run the Gradle task directly:
+locations, including temporary SDK directories under `/tmp`. It produces a versioned APK such as
+`app/build/outputs/apk/debug/ntfy-batch-v0.1.0-debug.apk`. You can also run the Gradle task directly:
 
 ```sh
 ./gradlew :app:assembleDebug
@@ -50,8 +50,21 @@ locations, including temporary SDK directories under `/tmp`. It produces
 Install the APK with Android Studio or:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/ntfy-batch-share.apk
+adb install -r app/build/outputs/apk/debug/ntfy-batch-v0.1.0-debug.apk
 ```
+
+## Versioning
+
+The release version is defined once in `gradle.properties`:
+
+```properties
+VERSION_CODE=1
+VERSION_NAME=0.1.0
+```
+
+`VERSION_NAME` follows semantic versioning (`major.minor.patch`) and is shown in the app and APK
+filename. Increment `VERSION_CODE` for every APK that may be published or installed as an update,
+and update `VERSION_NAME` for the user-visible release version.
 
 ## Compatibility note
 

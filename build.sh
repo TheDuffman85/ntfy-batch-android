@@ -99,5 +99,6 @@ fi
 cd "$project_root"
 "$project_root/gradlew" :app:assembleDebug "$@"
 
-apk_path="$project_root/app/build/outputs/apk/debug/ntfy-batch-share.apk"
+version_name="$(sed -n 's/^VERSION_NAME=//p' "$project_root/gradle.properties")"
+apk_path="$project_root/app/build/outputs/apk/debug/ntfy-batch-v${version_name}-debug.apk"
 printf 'Built APK: %s\n' "$apk_path"

@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ntfy Batch Share</string>
+    <string name="app_name">ntfy Batch</string>
+    <string name="app_icon_description">ntfy Batch icon</string>
+    <string name="multi_file_only">ntfy Batch is available only for multiple files.</string>
+    <string name="version_label">Version %1$s</string>
 </resources>

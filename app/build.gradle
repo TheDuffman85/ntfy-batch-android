@@ -1,15 +1,22 @@
 apply plugin: 'com.android.application'
 
+def releaseVersionCode = providers.gradleProperty('VERSION_CODE').get().toInteger()
+def releaseVersionName = providers.gradleProperty('VERSION_NAME').get()
+
 android {
-    namespace 'de.theduffman85.ntfyrelay'
+    namespace 'de.theduffman85.ntfybatch'
     compileSdk 35
 
     defaultConfig {
-        applicationId 'de.theduffman85.ntfyrelay'
+        applicationId 'de.theduffman85.ntfybatch'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '0.1.0'
+        versionCode releaseVersionCode
+        versionName releaseVersionName
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     compileOptions {
@@ -20,7 +27,7 @@ android {
 
 android.applicationVariants.all { variant ->
     variant.outputs.all {
-        outputFileName = 'ntfy-batch-share.apk'
+        outputFileName = "ntfy-batch-v${variant.versionName}-${variant.buildType.name}.apk"
     }
 }
 

@@ -1,4 +1,4 @@
-package de.theduffman85.ntfyrelay;
+package de.theduffman85.ntfybatch;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
@@ -87,7 +87,7 @@ public class MainActivity extends Activity {
     private static final String PREFS_SEND_AS_ZIP = "send_as_zip";
     private static final String QUEUE_DIRECTORY = "queue";
     private static final String EXTRA_IMPORT_HANDLED =
-            "de.theduffman85.ntfyrelay.extra.IMPORT_HANDLED";
+            "de.theduffman85.ntfybatch.extra.IMPORT_HANDLED";
 
     private final List<QueuedFile> queue = new ArrayList<>();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
@@ -175,7 +175,7 @@ public class MainActivity extends Activity {
         appBar.setElevation(dp(3));
 
         TextView title = new TextView(this);
-        title.setText("ntfy Batch Share");
+        title.setText(R.string.app_name);
         title.setTextSize(20);
         title.setTextColor(Color.WHITE);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
@@ -197,7 +197,7 @@ public class MainActivity extends Activity {
 
         ImageView relayIcon = new ImageView(this);
         relayIcon.setImageResource(R.mipmap.ic_launcher);
-        relayIcon.setContentDescription("ntfy Batch Share icon");
+        relayIcon.setContentDescription(getString(R.string.app_icon_description));
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(56), dp(56));
         iconParams.rightMargin = dp(14);
         introCard.addView(relayIcon, iconParams);
@@ -341,6 +341,12 @@ public class MainActivity extends Activity {
                 COLOR_MUTED, v -> clearQueue());
         actionPanel.addView(clearButton, fullWidthButtonParams());
 
+        TextView versionText = makeText(
+                getString(R.string.version_label, BuildConfig.VERSION_NAME), 12, COLOR_MUTED);
+        versionText.setGravity(Gravity.CENTER);
+        versionText.setPadding(0, dp(2), 0, dp(2));
+        actionPanel.addView(versionText, fullWidthParams());
+
         root.addView(actionPanel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -428,7 +434,7 @@ public class MainActivity extends Activity {
 
         List<Uri> uris = extractUris(intent);
         if (uris.size() < 2) {
-            setStatus("ntfy Batch Share is available only for multiple files.");
+            setStatus(getString(R.string.multi_file_only));
             finishIfQueueEmpty();
             return;
         }
