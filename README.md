@@ -9,8 +9,8 @@ It does not modify or fork ntfy.
 
 1. In a file manager or gallery, select several files and choose **ntfy Batch Share**. The share
    target is available only for multi-file shares.
-2. The relay copies the incoming `content://` URIs into app-private storage. The batch-share UI
-   stays open while the queue contains files.
+2. The relay clears any unsent files from an earlier batch, then copies the incoming `content://`
+   URIs into app-private storage. The batch-share UI stays open while the queue contains files.
 3. Leave ZIP mode off to send files individually, or enable **Send all files as one uncompressed
    ZIP** to send the queue in one message.
 4. Tap the Send button.

@@ -109,6 +109,7 @@ public class MainActivity extends Activity {
     private boolean preparingZip;
     private boolean importing;
     private boolean restoredTransferAwaitingNtfy;
+    private int importGeneration;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -438,11 +439,19 @@ public class MainActivity extends Activity {
         setIntent(intent);
 
         final String incomingMimeType = intent.getType();
+        final int generation = ++importGeneration;
+        List<QueuedFile> replacedFiles = removeReplaceableQueuedFiles();
+        saveQueue();
         importing = true;
-        setStatus("Copying " + uris.size() + " file" + (uris.size() == 1 ? "" : "s") + " into the queue…");
+        setStatus("Replacing the queue with " + uris.size() + " shared file"
+                + (uris.size() == 1 ? "" : "s") + "…");
         renderQueue();
 
         ioExecutor.execute(() -> {
+            for (QueuedFile replaced : replacedFiles) {
+                deleteRecursively(localFile(replaced).getParentFile());
+            }
+
             List<QueuedFile> imported = new ArrayList<>();
             List<String> failures = new ArrayList<>();
 
@@ -455,6 +464,23 @@ public class MainActivity extends Activity {
             }
 
             mainHandler.post(() -> {
+                // A newer share can arrive while these files are being copied. Only the latest
+                // share may populate the queue; otherwise two overlapping imports would append
+                // their results and recreate the queue-merging bug.
+                if (generation != importGeneration || isFinishing()) {
+                    for (QueuedFile superseded : imported) {
+                        deleteRecursively(localFile(superseded).getParentFile());
+                    }
+                    return;
+                }
+
+                // Normally the queue was already emptied before copying began. Clear it again
+                // here to cover state changes such as a pending ntfy transfer completing during
+                // the import. Files actively exposed to ntfy are preserved until it returns.
+                List<QueuedFile> displacedFiles = removeReplaceableQueuedFiles();
+                for (QueuedFile displaced : displacedFiles) {
+                    deleteRecursively(localFile(displaced).getParentFile());
+                }
                 queue.addAll(imported);
                 importing = false;
                 saveQueue();
@@ -473,6 +499,29 @@ public class MainActivity extends Activity {
                 finishIfQueueEmpty();
             });
         });
+    }
+
+    /**
+     * Removes files that are not part of a transfer currently open in ntfy. A newly received
+     * Android share represents a new batch, so these files must not carry over into that batch.
+     */
+    private List<QueuedFile> removeReplaceableQueuedFiles() {
+        Set<String> activeIds = new LinkedHashSet<>();
+        if (awaitingNtfy) {
+            for (QueuedFile active : activeFiles) {
+                activeIds.add(active.id);
+            }
+        }
+
+        List<QueuedFile> removed = new ArrayList<>();
+        for (int index = queue.size() - 1; index >= 0; index--) {
+            QueuedFile queued = queue.get(index);
+            if (!activeIds.contains(queued.id)) {
+                removed.add(queued);
+                queue.remove(index);
+            }
+        }
+        return removed;
     }
 
     private List<Uri> extractUris(Intent intent) {
