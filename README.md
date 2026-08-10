@@ -2,7 +2,7 @@
 
 This is a small Android share-target app for the ntfy Android app. It accepts multiple files,
 copies them into a private queue, and hands them to ntfy's existing share activity one at a time or
-as one uncompressed ZIP.
+as one ZIP.
 It does not modify or fork ntfy.
 
 ## Screenshots
@@ -18,18 +18,17 @@ It does not modify or fork ntfy.
    target is available only for multi-file shares.
 2. The relay clears any unsent files from an earlier batch, then copies the incoming `content://`
    URIs into app-private storage. The batch-share UI stays open while the queue contains files.
-3. Leave ZIP mode off to send files individually, or enable **Send all files as one uncompressed
-   ZIP** to send the queue in one message.
+3. Leave ZIP mode off to send files individually, or enable **Send all files as one ZIP** to send
+   the queue in one message.
 4. Tap the Send button.
 5. Complete the normal ntfy share flow, including choosing the topic and tapping Send.
 6. When ntfy returns, the relay removes that dispatch and automatically opens the next queued file.
    After the final file is dispatched and the queue is empty, the relay returns to the screen you
    shared from.
 
-To send all queued files in one ntfy message, enable **Send all files as one uncompressed ZIP**
-before tapping Send. The relay creates a ZIP with stored (not deflated) entries, keeps the original
-queued files while ntfy is open, then removes the whole bundle when ntfy returns. The switch is
-remembered for the next share; it is off by default.
+To send all queued files in one ntfy message, enable **Send all files as one ZIP** before tapping
+Send. The relay keeps the original queued files while ntfy is open, then removes the whole bundle
+when ntfy returns. The switch is remembered for the next share; it is off by default.
 
 The app follows Android's system light or dark appearance, including the system bars.
 
@@ -50,8 +49,8 @@ The script prefers `JAVA_HOME`, then a JDK on `PATH`, and finally a compatible J
 Gradle, so a system JDK installation is not required when Gradle has already downloaded one. It
 also detects Android SDK platform 35 in `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and common SDK
 locations, including temporary SDK directories under `/tmp`. By default, it produces a versioned
-release APK and debug APK, such as `app/build/outputs/apk/release/ntfy-batch-v0.2.0-release.apk`
-and `app/build/outputs/apk/debug/ntfy-batch-v0.2.0-debug.apk`. To build only the release APK, run
+release APK and debug APK, such as `app/build/outputs/apk/release/ntfy-batch-v0.2.1-release.apk`
+and `app/build/outputs/apk/debug/ntfy-batch-v0.2.1-debug.apk`. To build only the release APK, run
 `./build.sh release`; to build only the debug APK, run `./build.sh debug`. You can also run the
 Gradle tasks directly:
 
@@ -64,7 +63,7 @@ Gradle tasks directly:
 Install the APK with Android Studio or:
 
 ```sh
-adb install -r app/build/outputs/apk/release/ntfy-batch-v0.2.0-release.apk
+adb install -r app/build/outputs/apk/release/ntfy-batch-v0.2.1-release.apk
 ```
 
 ## Versioning
@@ -72,13 +71,13 @@ adb install -r app/build/outputs/apk/release/ntfy-batch-v0.2.0-release.apk
 The release version is defined once in `gradle.properties`:
 
 ```properties
-VERSION_CODE=2
-VERSION_NAME=0.2.0
+VERSION_CODE=3
+VERSION_NAME=0.2.1
 ```
 
-`VERSION_NAME` follows semantic versioning (`major.minor.patch`) and is shown in the app and APK
+`VERSION_NAME` follows semantic versioning (`major.minor.patch`) and is included in the APK
 filename. Increment `VERSION_CODE` for every APK that may be published or installed as an update,
-and update `VERSION_NAME` for the user-visible release version.
+and update `VERSION_NAME` for each release.
 
 ## Compatibility note
 

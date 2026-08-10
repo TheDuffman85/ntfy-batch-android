@@ -52,14 +52,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
  * Receives ACTION_SEND_MULTIPLE and queues files for ntfy's existing share activity. Files are
- * handed over one at a time, or as one uncompressed ZIP when that mode is selected.
+ * handed over one at a time, or as one ZIP when that mode is selected.
  *
  * ntfy does not return a success result from its share activity. The relay therefore treats the
  * return from ntfy as the end of the dispatch and automatically advances the queue.
@@ -237,7 +236,7 @@ public class MainActivity extends Activity {
 
         LinearLayout modeCopy = new LinearLayout(this);
         modeCopy.setOrientation(LinearLayout.VERTICAL);
-        TextView modeTitle = makeText("Send all files as one uncompressed ZIP", 15, colorText);
+        TextView modeTitle = makeText("Send all files as one ZIP", 15, colorText);
         modeTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         modeCopy.addView(modeTitle, wrapParams());
         TextView modeSubtitle = makeText(
@@ -248,7 +247,7 @@ public class MainActivity extends Activity {
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         zipModeSwitch = new Switch(this);
-        zipModeSwitch.setContentDescription("Send all queued files as one uncompressed ZIP");
+        zipModeSwitch.setContentDescription("Send all queued files as one ZIP");
         zipModeSwitch.setChecked(getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getBoolean(PREFS_SEND_AS_ZIP, false));
         zipModeSwitch.setOnCheckedChangeListener((buttonView, checked) -> {
@@ -333,12 +332,6 @@ public class MainActivity extends Activity {
                 colorOnPrimary, v -> sendCurrentFile());
         actionPanel.addView(sendButton, fullWidthButtonParams());
 
-        TextView versionText = makeText(
-                getString(R.string.version_label, BuildConfig.VERSION_NAME), 12, colorMuted);
-        versionText.setGravity(Gravity.CENTER);
-        versionText.setPadding(0, dp(2), 0, dp(2));
-        actionPanel.addView(versionText, fullWidthParams());
-
         root.addView(actionPanel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -381,6 +374,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(4);
+        params.bottomMargin = dp(4);
         return params;
     }
 
@@ -640,7 +634,8 @@ public class MainActivity extends Activity {
         shareIntent.setComponent(new ComponentName(ntfyPackage, NTFY_SHARE_ACTIVITY));
         shareIntent.setType(shareMimeType);
         shareIntent.putExtra(Intent.EXTRA_STREAM, shareUri);
-        shareIntent.setClipData(ClipData.newRawUri(file.displayName, shareUri));
+        shareIntent.setClipData(ClipData.newUri(
+                getContentResolver(), file.displayName, shareUri));
         shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
         activeFile = file;
@@ -673,7 +668,7 @@ public class MainActivity extends Activity {
         ioExecutor.execute(() -> {
             File zipFile = null;
             try {
-                zipFile = createUncompressedZip(files);
+                zipFile = createZip(files);
                 File preparedZip = zipFile;
                 mainHandler.post(() -> {
                     preparingZip = false;
@@ -703,7 +698,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private File createUncompressedZip(List<QueuedFile> files) throws IOException {
+    private File createZip(List<QueuedFile> files) throws IOException {
         File queueDirectory = new File(getFilesDir(), QUEUE_DIRECTORY);
         File bundleDirectory = new File(queueDirectory, "bundle-" + UUID.randomUUID());
         if (!bundleDirectory.mkdirs()) {
@@ -716,8 +711,9 @@ public class MainActivity extends Activity {
         try {
             Set<String> entryNames = new LinkedHashSet<>();
             try (ZipOutputStream zipOutput = new ZipOutputStream(new FileOutputStream(zipFile))) {
-                // STORED entries below are the important part: the file data is not deflated.
-                zipOutput.setLevel(Deflater.NO_COMPRESSION);
+                // ntfy detects attachment types from their bytes. Keeping a nested APK stored
+                // exposes its own ZIP headers and can make the outer archive look like an APK.
+                zipOutput.setLevel(Deflater.BEST_SPEED);
                 for (QueuedFile file : files) {
                     File source = localFile(file);
                     if (!source.isFile()) {
@@ -725,12 +721,8 @@ public class MainActivity extends Activity {
                                 + file.displayName);
                     }
 
-                    ZipEntryMetadata metadata = inspectFileForZip(source);
                     ZipEntry entry = new ZipEntry(uniqueZipEntryName(file.displayName, entryNames));
-                    entry.setMethod(ZipEntry.STORED);
-                    entry.setSize(metadata.size);
-                    entry.setCompressedSize(metadata.size);
-                    entry.setCrc(metadata.crc);
+                    entry.setMethod(ZipEntry.DEFLATED);
                     zipOutput.putNextEntry(entry);
                     try (InputStream input = new FileInputStream(source)) {
                         copyStream(input, zipOutput);
@@ -746,20 +738,6 @@ public class MainActivity extends Activity {
             }
             throw new IOException(exception);
         }
-    }
-
-    private ZipEntryMetadata inspectFileForZip(File source) throws IOException {
-        CRC32 crc = new CRC32();
-        long size = 0;
-        try (InputStream input = new FileInputStream(source)) {
-            byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                crc.update(buffer, 0, read);
-                size += read;
-            }
-        }
-        return new ZipEntryMetadata(size, crc.getValue());
     }
 
     private void copyStream(InputStream input, OutputStream output) throws IOException {
@@ -813,9 +791,10 @@ public class MainActivity extends Activity {
 
         Intent shareIntent = new Intent(Intent.ACTION_SEND);
         shareIntent.setComponent(new ComponentName(ntfyPackage, NTFY_SHARE_ACTIVITY));
-        shareIntent.setType("application/zip");
+        shareIntent.setType(QueuedFileProvider.ZIP_MIME_TYPE);
         shareIntent.putExtra(Intent.EXTRA_STREAM, shareUri);
-        shareIntent.setClipData(ClipData.newRawUri(zipFile.getName(), shareUri));
+        shareIntent.setClipData(ClipData.newUri(
+                getContentResolver(), zipFile.getName(), shareUri));
         shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
         awaitingNtfy = true;
@@ -1218,13 +1197,4 @@ public class MainActivity extends Activity {
         }
     }
 
-    private static final class ZipEntryMetadata {
-        final long size;
-        final long crc;
-
-        ZipEntryMetadata(long size, long crc) {
-            this.size = size;
-            this.crc = crc;
-        }
-    }
 }
